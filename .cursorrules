@@ -1,0 +1,10 @@
+# Project Intelligence (.cursorrules)
+
+## Working Agreements
+- Always read every file in `memory-bank/` before acting.
+- Update the Memory Bank and this file immediately after learning new patterns or preferences.
+- Prefer absolute paths in tool commands.
+
+## Observations (2025-11-23)
+- Repository currently contains only documentation scaffolding; implementation details are TBD.
+- Keep instructions from the user visible so resets still follow the Memory Bank workflow.

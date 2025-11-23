@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #050510;
+  color: #e0e0e0;
+  font-family: 'VT323', monospace;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Press Start 2P', cursive;
+}
+
+/* Retro Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0b0b20; 
+}
+::-webkit-scrollbar-thumb {
+  background: #1a1a3a; 
+  border: 1px solid #00f3ff;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #00f3ff; 
+}
+
+.retro-btn {
+  @apply font-pixel text-xs px-6 py-3 uppercase tracking-wider border-2 transition-all duration-100 active:translate-y-1;
+  box-shadow: 4px 4px 0px 0px rgba(0,0,0,0.5);
+}
+
+.retro-card {
+  @apply border-2 border-space-700 bg-space-800 p-4 relative;
+  box-shadow: 6px 6px 0px 0px #1a1a3a;
+}
