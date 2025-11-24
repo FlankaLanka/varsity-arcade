@@ -5,7 +5,8 @@
  * Useful for closing dropdowns, modals, and other overlay components.
  */
 
-import { useEffect, RefObject } from 'react';
+import { useEffect } from 'react';
+import type { RefObject } from 'react';
 
 /**
  * Hook to detect clicks outside a referenced element
@@ -15,7 +16,7 @@ import { useEffect, RefObject } from 'react';
  * @param enabled - Whether the hook is active (default: true)
  */
 export function useClickOutside<T extends HTMLElement = HTMLElement>(
-  ref: RefObject<T>,
+  ref: RefObject<T | null>,
   handler: (event: MouseEvent | TouchEvent) => void,
   enabled: boolean = true
 ) {

@@ -5,19 +5,27 @@
 - **Frontend**: React + TypeScript + Vite, Tailwind CSS for styling
 - **Backend**: Firebase (Auth, Firestore, Realtime DB, Functions, Storage)
 - **Game Rendering**: Canvas API with `requestAnimationFrame` game loops
-- **Routing**: React Router for navigation between hub, games, results, leaderboards
+- **Routing**: React Router for navigation between hub, games, results, leaderboards, profile, and friend profiles
 
 ## Component Architecture
 
 ### Layout Components
-- **`Layout.tsx`**: Main app shell with header, navigation, online player count
+- **`Layout.tsx`**: Main app shell with header, navigation, online player count, profile and friends dropdowns
 - **`GameFrame.tsx`**: Reusable game HUD wrapper (score, lives, wave, timer)
 - **`StarfieldBackground.tsx`**: Parallax starfield background with mouse reactivity
+- **`ProfileDropdown.tsx`**: Profile dropdown from header with XP, stats, achievements preview, daily quests
+- **`FriendsList.tsx`**: Friends list dropdown with online status and friend cards
+- **`FriendDetailModal.tsx`**: Modal for friend actions (view profile, remove, block)
+- **`XPProgressBar.tsx`**: XP progress bar component with level display
+- **`AchievementBadge.tsx`**: Achievement badge with tooltip
+- **`FriendCard.tsx`**: Friend card component with avatar, status, and activity
 
 ### Page Components
 - **`ArcadeHub.tsx`**: Game selection hub with game cards
 - **`LeaderboardPage.tsx`**: Leaderboard with filtering and stats
 - **`ResultsPage.tsx`**: Game completion screen with viral loops
+- **`ProfilePage.tsx`**: Full user profile page with XP, achievements, quests, stats, activity, and settings
+- **`FriendProfilePage.tsx`**: Friend profile page (similar to user profile, without settings/quests)
 
 ### Game Components
 - **`AsteroidsGame.tsx`**: Asteroids: Synonym Shooter implementation
@@ -66,9 +74,29 @@ const loop = (currentTime: number) => {
 
 ## Integration Points
 - **Firebase Auth**: User authentication (pending implementation)
-- **Firestore**: Leaderboard data, user progress (pending implementation)
-- **Realtime DB**: Online player count (pending implementation)
+- **Firestore**: Leaderboard data, user progress, achievements, daily quests, friend relationships (pending implementation)
+- **Realtime DB**: Online player count, friend presence/activity (pending implementation)
 - **Storage**: Game assets, user avatars (pending implementation)
+
+## Profile & Social Patterns
+
+### XP & Leveling System
+- Exponential progression: `XP = 100 * (level - 1)^1.5`
+- XP sources: game scores, completions, achievements, daily quests
+- Streak multipliers: 1.0x (0-2 days), 1.1x (3-6), 1.25x (7-13), 1.5x (14-29), 2.0x (30+)
+- Level calculation uses binary search for efficiency
+
+### Modal & Dropdown Patterns
+- Modals rendered outside conditional blocks to persist when parent closes
+- Dropdowns use click-outside detection hook (`useClickOutside`)
+- Friend modal centered on screen with backdrop
+- Modal state managed independently from dropdown state
+
+### Friend Management
+- Friends list maintains local state for friend removal/blocking
+- Friend cards trigger modal on click (doesn't close dropdown)
+- Friend profile pages accessible via `/friend/:friendId` route
+- Mock friend data with online status and activity tracking
 
 ## Key Flows
 
@@ -106,3 +134,4 @@ const loop = (currentTime: number) => {
 - Document additional games as they're implemented
 - Add sequence diagrams for complex flows (ghost AI, collision detection)
 - Document Firebase integration patterns once implemented
+- Document profile/social data models for Firebase migration

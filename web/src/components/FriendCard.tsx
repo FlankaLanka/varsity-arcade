@@ -5,17 +5,26 @@
  * Features pixel art styling consistent with the arcade theme.
  */
 
+import type { KeyboardEvent } from 'react';
 import type { Friend } from '../types/user';
 import { formatActivityText } from '../data/mockFriendsData';
 
 interface FriendCardProps {
   friend: Friend;
-  onClick?: () => void;
+  onClick?: (friend: Friend) => void;
 }
 
 export default function FriendCard({ friend, onClick }: FriendCardProps) {
   const statusColor = friend.isOnline ? 'bg-neon-green' : 'bg-gray-600';
   const statusGlow = friend.isOnline ? 'shadow-[0_0_10px_rgba(0,255,0,0.5)]' : '';
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onClick) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick(friend);
+    }
+  };
 
   // Default pixel art avatar (8x8 grid pattern)
   const defaultAvatar = (
@@ -49,7 +58,10 @@ export default function FriendCard({ friend, onClick }: FriendCardProps) {
         transition-all duration-200
         ${onClick ? 'hover:bg-gray-800/70 hover:border-neon-cyan cursor-pointer' : ''}
       `}
-      onClick={onClick}
+      onClick={() => onClick?.(friend)}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={handleKeyDown}
     >
       {/* Avatar with Status Indicator */}
       <div className="relative flex-shrink-0">

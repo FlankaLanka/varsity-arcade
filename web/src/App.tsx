@@ -7,6 +7,8 @@ import { PacManMathGame } from './games/PacManMathGame';
 import { PHInvadersGame } from './games/PHInvadersGame';
 import { ResultsPage } from './pages/ResultsPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
+import { ProfilePage } from './pages/ProfilePage';
+import { FriendProfilePage } from './pages/FriendProfilePage';
 
 function App() {
   return (
@@ -19,6 +21,8 @@ function App() {
           <Route path="/game/ph-invaders" element={<PHInvadersGame />} />
           <Route path="/results" element={<ResultsPage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/friend/:friendId" element={<FriendProfilePage />} />
           <Route path="*" element={<div className="p-10 text-center text-neon-pink font-pixel">404: LEVEL NOT FOUND</div>} />
         </Route>
       </Routes>

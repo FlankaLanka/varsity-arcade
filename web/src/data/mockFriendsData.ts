@@ -95,6 +95,34 @@ export function getFriendsPlayingGame(gameType: 'asteroids' | 'pacman-math' | 'p
 }
 
 /**
+ * Remove a friend from the list
+ */
+export function removeFriend(friendId: string): Friend | null {
+  const index = mockFriends.findIndex(friend => friend.id === friendId);
+  if (index === -1) {
+    return null;
+  }
+
+  const [removed] = mockFriends.splice(index, 1);
+  return removed;
+}
+
+/**
+ * Block a friend (removes from list and returns blocked friend info)
+ */
+export function blockFriend(friendId: string): Friend | null {
+  const friend = removeFriend(friendId);
+  if (!friend) return null;
+
+  return {
+    ...friend,
+    isOnline: false,
+    currentActivity: 'offline',
+    lastSeen: new Date(),
+  };
+}
+
+/**
  * Format activity text for display
  */
 export function formatActivityText(activity: Friend['currentActivity']): string {

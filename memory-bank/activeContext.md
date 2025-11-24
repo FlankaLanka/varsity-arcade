@@ -7,6 +7,7 @@ _Last updated: 2025-01-XX_
   - **Asteroids: Synonym Shooter** - Vocabulary-based space shooter
   - **Pac-Man: Math Blitz** - Math problem-solving with classic Pac-Man mechanics
   - **pH Invaders** - Chemistry education with Space Invaders gameplay
+- **User Profile & Social System** - Complete profile page, XP progression, achievements, friends list with modals
 - Ready for backend integration and additional features
 
 ## Recently Completed
@@ -37,6 +38,21 @@ _Last updated: 2025-01-XX_
 - **Leaderboard** page with synthetic data
 - **Results** page for game completion
 - **Starfield Background** with mouse-reactive parallax effect
+- **Profile System**:
+  - Full profile page (`/profile`) with XP progress, stats, achievements (tabbed: All/Unlocked/Locked), daily quests, game stats, activity timeline, and settings
+  - Profile dropdown in header with quick access to profile info
+  - XP and leveling system with exponential progression curve
+  - Achievement system with 17+ achievements across multiple categories
+  - Daily quest system with progress tracking
+  - Game-specific statistics (high scores, games played, streaks, XP per game)
+  - Activity timeline showing recent games, achievements, XP milestones, and level ups
+  - Settings section (account, preferences, privacy, logout)
+- **Friends & Social System**:
+  - Friends list dropdown in header with online/offline status
+  - Friend detail modal with actions (View Profile, Remove Friend, Block User)
+  - Friend profile pages (`/friend/:friendId`) showing friend's stats, achievements, game stats, and activity
+  - Friend cards with click handlers to open modals
+  - Mock friend data with online status and current activity tracking
 
 ## Next Steps
 1. Continue refining game mechanics based on user feedback
@@ -44,6 +60,9 @@ _Last updated: 2025-01-XX_
 3. Connect to Firebase backend for real leaderboards and user data
 4. Add sound effects and music
 5. Implement user authentication and progress tracking
+6. Wire profile settings to actual persistence
+7. Implement friend request/accept system
+8. Add real-time presence detection for friends
 
 ## Decisions & Conventions
 - **Visual Style**: Pixelated outer space theme (retro fonts, deep cosmos backgrounds) for the entire UI.
@@ -54,6 +73,8 @@ _Last updated: 2025-01-XX_
 - **pH Invaders**: Chemistry education through gameplay - players learn compound acidity/basicity while managing pH balance
 - **Chemical Notation**: Proper subscript rendering for chemical formulas using canvas text manipulation
 - **Score Display**: All scores display as integers (no leading zeros), pH values with 1 decimal place
+- **Profile & Social**: Profile page consolidates profile and settings. Friends modal persists when dropdown closes. Modal centered on screen. Friend profile pages omit settings and daily quests.
+- **XP System**: Exponential leveling curve (100 * (level - 1)^1.5), XP from scores, completions, achievements, and quests. Streak multipliers up to 2x.
 - Always read every Memory Bank file at the start of a task.
 - Update Memory Bank immediately after making meaningful code or process changes.
 - Use `.cursorrules` to store recurring patterns, preferences, or insights that improve future work.

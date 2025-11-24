@@ -109,12 +109,57 @@
 - ✅ Responsive UI layouts
 - ✅ Game state persistence during gameplay
 
+### User Profile & Social System
+- ✅ Profile page (`/profile`) with comprehensive user information:
+  - Header with avatar, username, level, and XP progress bar
+  - Stats grid (streak, games played, total score, completed games)
+  - Achievements section with tabbed filtering (All/Unlocked/Locked)
+  - Daily quests with progress bars
+  - Game-specific statistics per game (high scores, games played, streaks, XP)
+  - Activity timeline (recent games, achievements, XP milestones, level ups)
+  - Settings section (account, preferences, privacy, logout)
+- ✅ Profile dropdown in header with quick access to profile info
+- ✅ XP and leveling system:
+  - Exponential progression curve: XP = 100 * (level - 1)^1.5
+  - XP from game scores (different rates per game type)
+  - Completion bonuses per game
+  - Achievement rewards (100-300 XP)
+  - Daily quest rewards (50-150 XP)
+  - Streak multipliers (1.0x to 2.0x for 30+ day streaks)
+- ✅ Achievement system with 17+ achievements:
+  - First game achievements
+  - Score milestones (1K, 5K, 10K, 25K)
+  - Streak milestones (3, 7, 30 days)
+  - Game-specific achievements
+  - Total score achievements
+  - Games played achievements
+- ✅ Daily quest system with progress tracking and XP rewards
+- ✅ Friends list dropdown in header:
+  - Online/offline status indicators
+  - Current activity display (which game playing or just online)
+  - Friend count badge
+  - Add friend button (placeholder)
+- ✅ Friend detail modal:
+  - Centered on screen with backdrop
+  - Friend information display
+  - Actions: View Profile, Remove Friend, Block User
+  - Modal persists when dropdown closes
+- ✅ Friend profile pages (`/friend/:friendId`):
+  - Similar to user profile but without settings and daily quests
+  - Shows friend's stats, achievements, game stats, and activity
+  - Mock friend profile data
+- ✅ TypeScript types for user profiles, achievements, quests, friends, game stats, and activity history
+- ✅ Mock data system for development and testing
+
 ## Pending Work
 - Connect to Firebase backend (Auth, Firestore, Realtime DB, Functions, Storage)
 - Implement real leaderboards with user data
 - Add sound effects and background music
 - User authentication and progress tracking
 - Additional mini-games as specified in PRD
+- Wire profile settings to actual persistence
+- Implement friend request/accept system
+- Add real-time presence detection for friends
 - Testing and bug fixes as needed
 
 ## Completed Games

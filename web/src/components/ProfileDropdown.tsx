@@ -5,6 +5,7 @@
  * Appears as a dropdown from the profile icon in the header.
  */
 
+import { useNavigate } from 'react-router-dom';
 import { Trophy, Target, Flame, GamepadIcon, TrendingUp } from 'lucide-react';
 import XPProgressBar from './XPProgressBar';
 import AchievementBadge from './AchievementBadge';
@@ -20,9 +21,15 @@ interface ProfileDropdownProps {
 export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProps) {
   if (!isOpen) return null;
 
+  const navigate = useNavigate();
   const userProfile = getCurrentUserProfile();
   const recentAchievements = getRecentAchievements(4);
   const activeDailyQuests = getActiveDailyQuests();
+
+  const handleProfileNavigation = () => {
+    onClose();
+    navigate('/profile');
+  };
 
   // Default pixel art avatar
   const defaultAvatar = (
@@ -219,18 +226,12 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
 
         {/* Quick Links */}
         <div className="p-3 bg-gray-800/50 flex-shrink-0">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <button 
               className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-gray-300 hover:bg-gray-800 hover:border-neon-cyan transition-all"
-              onClick={() => {/* TODO: Navigate to profile page */}}
+              onClick={handleProfileNavigation}
             >
               Profile
-            </button>
-            <button 
-              className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-gray-300 hover:bg-gray-800 hover:border-neon-cyan transition-all"
-              onClick={() => {/* TODO: Navigate to settings page */}}
-            >
-              Settings
             </button>
             <button 
               className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-gray-300 hover:bg-gray-800 hover:border-neon-pink transition-all"

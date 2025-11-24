@@ -19,6 +19,8 @@ export interface UserProfile {
   achievements: Achievement[];
   dailyQuests: DailyQuest[];
   friends: Friend[];
+  gameStats: Record<GameType, GameStatSummary>;
+  activityHistory: ActivityEntry[];
 }
 
 export interface Achievement {
@@ -54,4 +56,22 @@ export interface Friend {
 export type GameType = 'asteroids' | 'pacman-math' | 'ph-invaders';
 export type AchievementType = 'first-game' | 'score-milestone' | 'streak-milestone' | 'game-specific';
 export type QuestType = 'play-games' | 'score-milestone' | 'complete-variety' | 'maintain-streak';
+
+export interface GameStatSummary {
+  highScore: number;
+  gamesPlayed: number;
+  bestStreak: number;
+  totalXP: number;
+}
+
+export type ActivityType = 'game' | 'achievement' | 'xp' | 'level';
+
+export interface ActivityEntry {
+  id: string;
+  type: ActivityType;
+  description: string;
+  date: Date;
+  meta?: Record<string, string | number>;
+  icon?: string;
+}
 
