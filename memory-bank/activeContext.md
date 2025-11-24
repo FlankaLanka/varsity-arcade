@@ -3,6 +3,8 @@
 _Last updated: 2025-01-XX_
 
 ## Current Focus
+- **User Authentication**: Implemented basic login/sign-up flow with mock persistence.
+- **User Profile**: Integrated authentication with profile system.
 - All four games/experiences are complete and playable:
   - **Asteroids: Synonym Shooter** - Vocabulary-based space shooter
   - **Pac-Man: Math Blitz** - Math problem-solving with classic Pac-Man mechanics
@@ -10,9 +12,15 @@ _Last updated: 2025-01-XX_
   - **Whiteboard Battle** - Collaborative drawing turned into a cooperative defense shooter
 - **Cohort System** - Complete implementation of cohort creation, joining, room layout, and whiteboard-to-battle workflow.
 - **User Profile & Social System** - Complete profile page, XP progression, achievements, friends list with modals.
-- Ready for backend integration and additional features.
 
 ## Recently Completed
+- **Authentication System**:
+  - Created `AuthContext` to manage user state (login/logout/signup).
+  - Implemented `AuthPage` with toggleable Login/Sign-up forms.
+  - Integrated `AuthProvider` into `App.tsx` with protected route logic.
+  - Updated `ProfilePage` and `ProfileDropdown` to use real user data from context and handle logout.
+  - Added simple local storage persistence for "stay signed in" behavior (mock).
+
 - **Whiteboard Enhancements**:
   - Added **Primitive Shape Tools**: Square/Rectangle, Circle, and Triangle.
   - Implemented "drag-to-draw" preview logic for shapes.
@@ -81,15 +89,13 @@ _Last updated: 2025-01-XX_
   - Mock friend data with online status and current activity tracking
 
 ## Next Steps
-1. Continue refining game mechanics based on user feedback
+1. Connect to Firebase backend for real leaderboards and user data
 2. Implement additional mini-games as specified in PRD
-3. Connect to Firebase backend for real leaderboards and user data
-4. Add sound effects and music
-5. Implement user authentication and progress tracking
-6. Wire profile settings to actual persistence
-7. Implement friend request/accept system
-8. Add real-time presence detection for friends
-9. Implement real-time synchronization for whiteboard/battle (multiplayer)
+3. Add sound effects and music
+4. Wire profile settings to actual persistence
+5. Implement friend request/accept system
+6. Add real-time presence detection for friends
+7. Implement real-time synchronization for whiteboard/battle (multiplayer)
 
 ## Decisions & Conventions
 - **Visual Style**: Pixelated outer space theme (retro fonts, deep cosmos backgrounds) for the entire UI.
@@ -104,6 +110,7 @@ _Last updated: 2025-01-XX_
 - **Profile & Social**: Profile page consolidates profile and settings. Friends modal persists when dropdown closes. Modal centered on screen. Friend profile pages omit settings and daily quests.
 - **XP System**: Exponential leveling curve (100 * (level - 1)^1.5), XP from scores, completions, achievements, and quests. Streak multipliers up to 2x.
 - **Cohort System**: Single-user whiteboard transforms to cooperative defense battle on verification. Uses mock data for cohorts/members until backend integration.
+- **Authentication**: AuthContext manages user state. Local storage used for mock persistence. Protected routes redirect to AuthPage.
 - Always read every Memory Bank file at the start of a task.
 - Update Memory Bank immediately after making meaningful code or process changes.
 - Use `.cursorrules` to store recurring patterns, preferences, or insights that improve future work.

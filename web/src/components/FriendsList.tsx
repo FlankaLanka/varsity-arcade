@@ -1,16 +1,9 @@
-/**
- * Friends List Component
- *
- * Displays user's friends list with online status and current activity.
- * Appears as a dropdown from the friends icon in the header.
- */
-
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, UserPlus } from 'lucide-react';
 import FriendCard from './FriendCard';
 import { FriendDetailModal } from './FriendDetailModal';
-import { mockFriends, removeFriend, blockFriend } from '../data/mockFriendsData';
+import { useAuth } from '../context/AuthContext';
 import type { Friend } from '../types/user';
 
 interface FriendsListProps {
@@ -20,9 +13,16 @@ interface FriendsListProps {
 
 export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
   const navigate = useNavigate();
-  const [friends, setFriends] = useState<Friend[]>(() => [...mockFriends]);
+  const { user } = useAuth();
+  const [friends, setFriends] = useState<Friend[]>([]);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (user?.friends) {
+      setFriends(user.friends);
+    }
+  }, [user]);
 
   const onlineFriends = useMemo(() => friends.filter(friend => friend.isOnline), [friends]);
   const offlineFriends = useMemo(() => friends.filter(friend => !friend.isOnline), [friends]);
@@ -38,12 +38,14 @@ export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
   };
 
   const handleRemoveFriend = (friendId: string) => {
-    removeFriend(friendId);
+    // TODO: Implement Firestore service call
+    console.log('Removing friend:', friendId);
     setFriends(prev => prev.filter(friend => friend.id !== friendId));
   };
 
   const handleBlockFriend = (friendId: string) => {
-    blockFriend(friendId);
+    // TODO: Implement Firestore service call
+    console.log('Blocking friend:', friendId);
     setFriends(prev => prev.filter(friend => friend.id !== friendId));
   };
 
@@ -180,4 +182,3 @@ export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
     </>
   );
 }
-

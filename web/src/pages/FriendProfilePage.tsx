@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { ReactElement } from 'react';
 import XPProgressBar from '../components/XPProgressBar';
 import AchievementBadge from '../components/AchievementBadge';
-import { getFriendProfile } from '../data/mockFriendProfiles';
-import type { Achievement, ActivityEntry, GameType } from '../types/user';
+import { getUserProfile } from '../services/firestore';
+import type { Achievement, ActivityEntry, GameType, UserProfile } from '../types/user';
 
 const achievementTabs: Array<'all' | 'unlocked' | 'locked'> = ['all', 'unlocked', 'locked'];
 
@@ -17,7 +17,24 @@ const gameLabels: Record<GameType, { label: string; icon: string; accent: string
 export function FriendProfilePage() {
   const { friendId } = useParams();
   const navigate = useNavigate();
-  const profile = friendId ? getFriendProfile(friendId) : null;
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!friendId) return;
+      setIsLoading(true);
+      try {
+        const userData = await getUserProfile(friendId);
+        setProfile(userData);
+      } catch (error) {
+        console.error("Failed to fetch friend profile", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchProfile();
+  }, [friendId]);
 
   const [activeTab, setActiveTab] = useState<(typeof achievementTabs)[number]>('all');
 
@@ -39,6 +56,16 @@ export function FriendProfilePage() {
       locked: profile.achievements.length - unlockedCount,
     };
   }, [profile]);
+
+  if (isLoading) {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-space-900 text-white">
+          <div className="text-center space-y-4">
+            <p className="text-lg font-['Press_Start_2P'] animate-pulse">LOADING...</p>
+          </div>
+        </div>
+      );
+  }
 
   if (!profile) {
     return (
@@ -69,13 +96,11 @@ export function FriendProfilePage() {
     </svg>
   );
 
-  const activityHistory = useMemo(
-    () =>
-      [...profile.activityHistory].sort(
-        (a, b) => b.date.getTime() - a.date.getTime(),
-      ),
-    [profile.activityHistory],
-  );
+  const activityHistory = [...profile.activityHistory].sort((a, b) => {
+      const dateA = a.date instanceof Date ? a.date : (a.date as any).toDate();
+      const dateB = b.date instanceof Date ? b.date : (b.date as any).toDate();
+      return dateB.getTime() - dateA.getTime();
+  });
 
   return (
     <div className="min-h-screen text-white bg-gradient-to-b from-space-900 via-space-800 to-space-900">
@@ -99,7 +124,7 @@ function HeaderSection({
   profile,
   defaultAvatar,
 }: {
-  profile: ReturnType<typeof getFriendProfile> extends infer T ? NonNullable<T> : never;
+  profile: UserProfile;
   defaultAvatar: ReactElement;
 }) {
   return (
@@ -107,13 +132,13 @@ function HeaderSection({
       <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
         <div className="w-24 h-24 bg-gray-800 border-2 border-neon-pink rounded-xl overflow-hidden flex items-center justify-center shadow-[0_0_30px_rgba(255,0,110,0.6)]">
           {profile.avatar ? (
-            <img src={profile.avatar} alt={profile.displayName} className="w-full h-full object-cover pixelated" />
+            <img src={profile.avatar} alt={profile.username} className="w-full h-full object-cover pixelated" />
           ) : (
             defaultAvatar
           )}
         </div>
         <div className="flex-1">
-          <h1 className="text-2xl font-['Press_Start_2P'] text-white mb-2">{profile.displayName}</h1>
+          <h1 className="text-2xl font-['Press_Start_2P'] text-white mb-2">{profile.username}</h1>
           <p className="text-sm text-gray-400 mb-4">@{profile.username}</p>
           <XPProgressBar currentXP={profile.totalXP} currentLevel={profile.level} />
         </div>
@@ -122,7 +147,7 @@ function HeaderSection({
   );
 }
 
-function StatsGrid({ profile }: { profile: NonNullable<ReturnType<typeof getFriendProfile>> }) {
+function StatsGrid({ profile }: { profile: UserProfile }) {
   const stats = [
     { label: 'Level', value: profile.level, accent: 'text-neon-green', icon: '🚀' },
     { label: 'Total XP', value: profile.totalXP, accent: 'text-neon-cyan', icon: '⚡' },
@@ -195,7 +220,7 @@ function AchievementSection({
   );
 }
 
-function GameStatsSection({ profile }: { profile: NonNullable<ReturnType<typeof getFriendProfile>> }) {
+function GameStatsSection({ profile }: { profile: UserProfile }) {
   const statValues = Object.values(profile.gameStats);
   const maxHighScore = Math.max(...statValues.map(stat => stat.highScore));
   const maxGamesPlayed = Math.max(...statValues.map(stat => stat.gamesPlayed));
@@ -274,6 +299,16 @@ function ProgressMeter({
 }
 
 function ActivitySection({ activities }: { activities: ActivityEntry[] }) {
+  const groupedEntries = activities.reduce<Map<string, ActivityEntry[]>>((map, activity) => {
+    const dateObj = activity.date instanceof Date ? activity.date : (activity.date as any).toDate();
+    const key = dateObj.toLocaleDateString();
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+    map.get(key)?.push({ ...activity, date: dateObj });
+    return map;
+  }, new Map<string, ActivityEntry[]>());
+
   return (
     <section className="p-6 border-2 border-indigo-500/40 bg-gray-900/60 rounded-xl shadow-lg space-y-4">
       <h2 className="text-sm font-['Press_Start_2P'] text-indigo-300 flex items-center gap-2">
@@ -285,26 +320,33 @@ function ActivitySection({ activities }: { activities: ActivityEntry[] }) {
       <div className="relative pl-6">
         <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-gradient-to-b from-indigo-500/40 via-indigo-400/20 to-transparent pointer-events-none" />
         <div className="space-y-6">
-          {activities.map(activity => (
-            <div key={activity.id} className="relative pl-6">
-              <div className="absolute left-0 top-3 w-3 h-3 rounded-full bg-indigo-400 border-2 border-gray-900" />
-              <div className="border border-gray-800 rounded-lg p-4 bg-gray-950/70">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span>{activity.icon ?? '✨'}</span>
-                    <p className="text-sm text-white">{activity.description}</p>
+          {Array.from(groupedEntries.entries()).map(([date, items]) => (
+            <div key={date}>
+              <p className="text-xs font-['Press_Start_2P'] text-indigo-200 mb-3">{date}</p>
+              <div className="space-y-3">
+                {items.map(activity => (
+                  <div key={activity.id} className="relative pl-6">
+                    <div className="absolute left-0 top-3 w-3 h-3 rounded-full bg-indigo-400 border-2 border-gray-900" />
+                    <div className="border border-gray-800 rounded-lg p-4 bg-gray-950/70">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span>{activity.icon ?? '✨'}</span>
+                          <p className="text-sm text-white">{activity.description}</p>
+                        </div>
+                        <span className="text-xs text-gray-500">{activity.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      {activity.meta && (
+                        <div className="mt-2 text-xs text-gray-400 flex flex-wrap gap-3">
+                          {Object.entries(activity.meta).map(([key, value]) => (
+                            <span key={key} className="uppercase tracking-wide">
+                              {key}: {value}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-xs text-gray-500">{activity.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-                {activity.meta && (
-                  <div className="mt-2 text-xs text-gray-400 flex flex-wrap gap-3">
-                    {Object.entries(activity.meta).map(([key, value]) => (
-                      <span key={key} className="uppercase tracking-wide">
-                        {key}: {value}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                ))}
               </div>
             </div>
           ))}
@@ -313,4 +355,3 @@ function ActivitySection({ activities }: { activities: ActivityEntry[] }) {
     </section>
   );
 }
-

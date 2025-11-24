@@ -1099,116 +1099,63 @@ export const PacManMathGame = () => {
 
   if (gameOver) {
     return (
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <button 
-            onClick={() => navigate('/')} 
-            className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
-          >
-            <span className="font-pixel text-xs">EXIT GAME</span>
-          </button>
-          <h1 className="font-pixel text-xl text-neon-yellow shadow-neon">PAC-MAN: MATH BLITZ</h1>
-          <div className="w-20"></div>
-        </div>
-
-        <div className="relative border-4 border-space-700 rounded-lg bg-black p-1 shadow-[0_0_20px_rgba(0,243,255,0.2)]">
-          <div className="aspect-video bg-space-900 relative overflow-hidden">
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-50">
-              <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">GAME OVER</h2>
-              <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
-              
-              <div className="flex gap-4">
-                <button 
-                  onClick={() => window.location.reload()} 
-                  className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
-                >
-                  RETRY
-                </button>
-                <button 
-                  onClick={() => navigate('/results', { state: { score, game: 'Pac-Man: Math Blitz' } })}
-                  className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
-                >
-                  CONTINUE
-                </button>
-              </div>
+      <GameFrame
+        title="PAC-MAN: MATH BLITZ"
+        score={score}
+        lives={lives}
+        timeRemaining={timeRemaining}
+        containerClassName="aspect-[7/6]"
+        overlay={
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80">
+            <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">GAME OVER</h2>
+            <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
+            
+            <div className="flex gap-4">
+              <button 
+                onClick={() => window.location.reload()} 
+                className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
+              >
+                RETRY
+              </button>
+              <button 
+                onClick={() => navigate('/results', { state: { score, game: 'Pac-Man: Math Blitz' } })}
+                className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
+              >
+                CONTINUE
+              </button>
             </div>
           </div>
-        </div>
-      </div>
+        }
+      >
+        <canvas ref={canvasRef} className="w-full h-full block" />
+      </GameFrame>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      {/* Game Header */}
-      <div className="flex items-center justify-between mb-4">
-        <button 
-          onClick={() => navigate('/')} 
-          className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
-        >
-          <span className="font-pixel text-xs">EXIT GAME</span>
-        </button>
-        <h1 className="font-pixel text-xl text-neon-yellow shadow-neon">PAC-MAN: MATH BLITZ</h1>
-        <div className="w-20"></div>
-      </div>
-
-      {/* UI Panel - Top */}
-      <div className="border-4 border-space-700 rounded-lg bg-space-800 p-4 mb-4">
-        {/* Top Row: Score, Lives, Time */}
-        <div className="flex justify-between items-center mb-4">
-          <div className="font-pixel text-white">
-            <div className="text-neon-cyan text-xs mb-1">SCORE</div>
-            <div className="text-xl">{score.toString()}</div>
-          </div>
-          
-          <div className="text-center">
-            <div className="text-gray-400 text-xs mb-1 font-pixel">
-              {isSupercharged ? 'POWER ACTIVE!' : 'SOLVE TO GET POWER'}
-            </div>
-            <div className="text-neon-cyan text-2xl font-pixel">
-              {isSupercharged 
-                ? currentProblem.equation.replace('_', currentProblem.answer.toString())
-                : currentProblem.equation}
-            </div>
-          </div>
-          
-          <div className="flex gap-6">
-            <div className="font-pixel text-white text-right">
-              <div className="text-neon-pink text-xs mb-1">LIVES</div>
-              <div className="text-xl">{'♥'.repeat(lives)}</div>
-            </div>
-            <div className="font-pixel text-white text-right">
-              <div className="text-neon-yellow text-xs mb-1">TIME</div>
-              <div className={`text-xl ${timeRemaining <= 10 ? 'text-red-500 animate-pulse' : ''}`}>
-                {timeRemaining.toString().padStart(2, '0')}
-              </div>
-            </div>
-          </div>
+    <GameFrame
+      title="PAC-MAN: MATH BLITZ"
+      score={score}
+      lives={lives}
+      timeRemaining={timeRemaining}
+    >
+      {/* Top UI - now part of GameFrame mostly, but custom math display needed? */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-center w-full pointer-events-none">
+        <div className="text-gray-400 text-xs mb-1 font-pixel">
+          {isSupercharged ? 'POWER ACTIVE!' : 'SOLVE TO GET POWER'}
+        </div>
+        <div className="text-neon-cyan text-2xl font-pixel text-shadow">
+          {isSupercharged 
+            ? currentProblem.equation.replace('_', currentProblem.answer.toString())
+            : currentProblem.equation}
         </div>
       </div>
 
-      {/* Game Canvas - Bottom */}
-      <div className="relative border-4 border-space-700 rounded-lg bg-black p-1 shadow-[0_0_20px_rgba(0,243,255,0.2)]">
-        {/* CRT Scanline Overlay */}
-        <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 bg-[length:100%_2px,3px_100%] opacity-20"></div>
-        
-        <div className="aspect-video bg-space-900 relative overflow-hidden">
-          <canvas 
-            ref={canvasRef} 
-            className="w-full h-full bg-transparent cursor-none"
-            onClick={(e) => e.currentTarget.focus()}
-          />
-        </div>
-      </div>
-
-      {/* Controls Hint */}
-      <div className="mt-6 flex justify-center gap-8 text-gray-500 text-sm font-mono uppercase">
-        <div className="flex items-center gap-2">
-          <span className="border border-gray-700 px-2 py-1 rounded bg-space-800 text-xs text-white font-pixel">WASD</span>
-          <span>Move</span>
-        </div>
-      </div>
-    </div>
+      <canvas 
+        ref={canvasRef} 
+        className="w-full h-full bg-transparent cursor-none"
+        onClick={(e) => e.currentTarget.focus()}
+      />
+    </GameFrame>
   );
 };
-

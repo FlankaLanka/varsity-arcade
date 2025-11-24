@@ -1,9 +1,26 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Eraser, Undo, Redo, Trash2, PenTool, Check, Circle, Square, Triangle } from 'lucide-react';
+import { ref, onValue, push, set, remove, serverTimestamp, onDisconnect } from 'firebase/database';
+import { rtdb } from '../lib/firebase';
 import type { WhiteboardDrawing } from '../types/cohort';
+import { throttle } from '../utils/throttle';
+
+interface RemoteCursor {
+  x: number;
+  y: number;
+  username: string;
+  color: string;
+  timestamp: number;
+}
 
 interface WhiteboardProps {
   onVerifySuccess: (drawings: WhiteboardDrawing[]) => void;
+  cohortId?: string; // Optional for now to support standalone/mock mode
+  currentUser?: {
+    id: string;
+    username: string;
+    color?: string;
+  };
 }
 
 const COLORS = ['#FFFFFF', '#FF0055', '#00FFFF', '#55FF00', '#FFFF00'];
@@ -11,12 +28,13 @@ const BRUSH_SIZES = [2, 4, 8, 12];
 
 type Tool = 'pen' | 'eraser' | 'rect' | 'circle' | 'triangle';
 
-export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
+export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: WhiteboardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<{ x: number; y: number }[]>([]);
   const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
   const [drawings, setDrawings] = useState<WhiteboardDrawing[]>([]);
+  // Redo stack is local only for now
   const [redoStack, setRedoStack] = useState<WhiteboardDrawing[]>([]);
   
   const [color, setColor] = useState(COLORS[0]);
@@ -24,6 +42,102 @@ export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
   const [activeTool, setActiveTool] = useState<Tool>('pen');
   
   const [isVerifying, setIsVerifying] = useState(false);
+  const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursor>>({});
+  const lastCursorPosition = useRef<{ x: number; y: number } | null>(null);
+
+  // Realtime Database Sync for drawings
+  useEffect(() => {
+    if (!cohortId) return;
+
+    const whiteboardRef = ref(rtdb, `cohorts/${cohortId}/whiteboard`);
+    
+    const unsubscribe = onValue(whiteboardRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        // Convert object to array
+        const loadedDrawings: WhiteboardDrawing[] = Object.values(data);
+        // Sort by timestamp
+        loadedDrawings.sort((a, b) => a.timestamp - b.timestamp);
+        setDrawings(loadedDrawings);
+      } else {
+        setDrawings([]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [cohortId]);
+
+  // Listen for remote cursors
+  useEffect(() => {
+    if (!cohortId || !currentUser) return;
+
+    const cursorsRef = ref(rtdb, `cohorts/${cohortId}/cursors`);
+    
+    const unsubscribe = onValue(cursorsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        // Filter out our own cursor and only keep recent ones (within last 2 seconds)
+        const now = Date.now();
+        const others: Record<string, RemoteCursor> = {};
+        
+        Object.entries(data).forEach(([userId, cursor]: [string, any]) => {
+          if (userId !== currentUser.id && cursor) {
+            // Only show cursors that have been updated in the last 2 seconds
+            // Handle both number timestamps and server timestamp placeholders
+            const cursorTimestamp = typeof cursor.timestamp === 'number' ? cursor.timestamp : now;
+            if (cursorTimestamp && (now - cursorTimestamp) < 2000) {
+              others[userId] = {
+                x: cursor.x || 0,
+                y: cursor.y || 0,
+                username: cursor.username || 'Unknown',
+                color: cursor.color || COLORS[0],
+                timestamp: cursorTimestamp
+              };
+            }
+          }
+        });
+        
+        setRemoteCursors(others);
+      } else {
+        setRemoteCursors({});
+      }
+    });
+
+    // Cleanup: Remove my cursor when I leave
+    const myCursorRef = ref(rtdb, `cohorts/${cohortId}/cursors/${currentUser.id}`);
+    onDisconnect(myCursorRef).remove();
+
+    return () => {
+      unsubscribe();
+      remove(myCursorRef).catch(() => {});
+    };
+  }, [cohortId, currentUser]);
+
+  // Throttled function to broadcast cursor position
+  const broadcastCursor = useCallback(
+    throttle((x: number, y: number) => {
+      if (!cohortId || !currentUser) return;
+      
+      // Only broadcast if position changed significantly (avoid unnecessary updates)
+      if (lastCursorPosition.current) {
+        const dx = Math.abs(x - lastCursorPosition.current.x);
+        const dy = Math.abs(y - lastCursorPosition.current.y);
+        if (dx < 2 && dy < 2) return; // Skip if movement is less than 2px
+      }
+      
+      lastCursorPosition.current = { x, y };
+      
+      const myCursorRef = ref(rtdb, `cohorts/${cohortId}/cursors/${currentUser.id}`);
+      set(myCursorRef, {
+        x,
+        y,
+        username: currentUser.username,
+        color: currentUser.color || COLORS[0],
+        timestamp: serverTimestamp()
+      }).catch(() => {});
+    }, 50), // Update every 50ms
+    [cohortId, currentUser]
+  );
 
   // Resize observer to handle window resize
   useEffect(() => {
@@ -42,12 +156,12 @@ export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
     handleResize(); // Initial size
 
     return () => window.removeEventListener('resize', handleResize);
-  }, []); // Run once on mount
+  }, [drawings]); // Redraw when drawings update
 
-  // Redraw canvas whenever drawings change
+  // Redraw canvas whenever drawings or cursors change
   useEffect(() => {
     redraw();
-  }, [drawings, currentPath]); // Depend on currentPath to see live drawing
+  }, [drawings, currentPath, remoteCursors]); // Depend on currentPath and remoteCursors
 
   const redraw = () => {
     const canvas = canvasRef.current;
@@ -70,6 +184,51 @@ export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
     if (currentPath.length > 0) {
       drawPath(ctx, currentPath, activeTool === 'eraser' ? '#000000' : color, brushSize);
     }
+
+    // Draw remote cursors
+    Object.values(remoteCursors).forEach(cursor => {
+      drawCursor(ctx, cursor);
+    });
+  };
+
+  const drawCursor = (ctx: CanvasRenderingContext2D, cursor: RemoteCursor) => {
+    const { x, y, username, color: cursorColor } = cursor;
+    
+    // Draw cursor circle
+    ctx.beginPath();
+    ctx.arc(x, y, 8, 0, 2 * Math.PI);
+    ctx.fillStyle = cursorColor;
+    ctx.fill();
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Draw inner dot
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, 2 * Math.PI);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    
+    // Draw username label with background
+    const labelPadding = 4;
+    const labelHeight = 16;
+    ctx.font = '12px monospace';
+    const textMetrics = ctx.measureText(username);
+    const labelWidth = textMetrics.width + labelPadding * 2;
+    
+    // Draw label background
+    ctx.fillStyle = cursorColor;
+    ctx.fillRect(x + 12, y - labelHeight - 2, labelWidth, labelHeight);
+    
+    // Draw label border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 12, y - labelHeight - 2, labelWidth, labelHeight);
+    
+    // Draw username text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(username, x + 12 + labelPadding, y - 2);
   };
 
   const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
@@ -105,10 +264,6 @@ export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
     for (let i = 1; i < path.length; i++) {
       ctx.lineTo(path[i].x, path[i].y);
     }
-    
-    // Close path for shapes to ensure clean corners
-    // We can infer it's a closed shape if start ~= end, but battle logic handles open paths too.
-    // For rectangles/triangles/circles generated by tools, the last point = first point logic is handled in generation.
     
     ctx.stroke();
   };
@@ -153,11 +308,15 @@ export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawing || isVerifying) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const coords = getCoordinates(e, canvas);
+    
+    // Always broadcast cursor position (even when not drawing)
+    broadcastCursor(coords.x, coords.y);
+
+    if (!isDrawing || isVerifying) return;
 
     if (activeTool === 'pen' || activeTool === 'eraser') {
       setCurrentPath(prev => [...prev, coords]);
@@ -168,6 +327,30 @@ export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
     }
   };
 
+  // Track mouse movement even when not drawing (for cursor display)
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const coords = getCoordinates(e, canvas);
+    broadcastCursor(coords.x, coords.y);
+    
+    // Also call the draw function for drawing logic
+    draw(e);
+  };
+
+  // Remove cursor when mouse leaves canvas
+  const handleMouseLeave = () => {
+    if (!cohortId || !currentUser) return;
+    
+    const myCursorRef = ref(rtdb, `cohorts/${cohortId}/cursors/${currentUser.id}`);
+    remove(myCursorRef).catch(() => {});
+    lastCursorPosition.current = null;
+    
+    // Also call stopDrawing if we were drawing
+    stopDrawing();
+  };
+
   const stopDrawing = () => {
     if (!isDrawing) return;
     setIsDrawing(false);
@@ -175,7 +358,7 @@ export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
 
     if (currentPath.length > 1) {
       const newDrawing: WhiteboardDrawing = {
-        id: Date.now().toString(),
+        id: Date.now().toString(), // Temporary ID, will be replaced by push key if synced
         path: currentPath,
         color: activeTool === 'eraser' ? '#111827' : color,
         brushSize: brushSize,
@@ -183,7 +366,16 @@ export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
         type: 'path'
       };
       
-      setDrawings([...drawings, newDrawing]);
+      if (cohortId) {
+        // Sync to RTDB
+        const whiteboardListRef = ref(rtdb, `cohorts/${cohortId}/whiteboard`);
+        const newDrawingRef = push(whiteboardListRef);
+        set(newDrawingRef, { ...newDrawing, id: newDrawingRef.key });
+      } else {
+        // Local mode
+        setDrawings([...drawings, newDrawing]);
+      }
+      
       setRedoStack([]); // Clear redo stack
     }
     setCurrentPath([]);
@@ -208,29 +400,46 @@ export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
   };
 
   const handleUndo = () => {
-    if (drawings.length === 0) return;
-    const newDrawings = [...drawings];
-    const removed = newDrawings.pop();
-    if (removed) {
-      setDrawings(newDrawings);
-      setRedoStack([...redoStack, removed]);
+    // Only support local undo for now or last added if we track IDs
+    // With RTDB, removing the last item is complex if multiple users draw.
+    // Simplest implementation: Remove last item locally if we are in local mode.
+    // For synced mode, we'd need to track ownership of strokes.
+    
+    if (!cohortId) {
+      if (drawings.length === 0) return;
+      const newDrawings = [...drawings];
+      const removed = newDrawings.pop();
+      if (removed) {
+        setDrawings(newDrawings);
+        setRedoStack([...redoStack, removed]);
+      }
+    } else {
+        // TODO: Implement synced undo (remove my last stroke)
+        alert("Undo in multiplayer mode not implemented yet");
     }
   };
 
   const handleRedo = () => {
-    if (redoStack.length === 0) return;
-    const newRedoStack = [...redoStack];
-    const restored = newRedoStack.pop();
-    if (restored) {
-      setDrawings([...drawings, restored]);
-      setRedoStack(newRedoStack);
+    if (!cohortId) {
+        if (redoStack.length === 0) return;
+        const newRedoStack = [...redoStack];
+        const restored = newRedoStack.pop();
+        if (restored) {
+        setDrawings([...drawings, restored]);
+        setRedoStack(newRedoStack);
+        }
     }
   };
 
   const handleClear = () => {
     if (window.confirm('Clear whiteboard?')) {
-      setDrawings([]);
-      setRedoStack([]);
+        if (cohortId) {
+            const whiteboardRef = ref(rtdb, `cohorts/${cohortId}/whiteboard`);
+            remove(whiteboardRef);
+        } else {
+            setDrawings([]);
+            setRedoStack([]);
+        }
     }
   };
 
@@ -247,9 +456,9 @@ export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
       <canvas
         ref={canvasRef}
         onMouseDown={startDrawing}
-        onMouseMove={draw}
+        onMouseMove={handleMouseMove}
         onMouseUp={stopDrawing}
-        onMouseLeave={stopDrawing}
+        onMouseLeave={handleMouseLeave}
         onTouchStart={startDrawing}
         onTouchMove={draw}
         onTouchEnd={stopDrawing}

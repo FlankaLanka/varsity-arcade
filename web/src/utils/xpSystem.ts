@@ -5,7 +5,7 @@
  * Uses an exponential curve for leveling to create a sense of progression.
  */
 
-import type { GameType, AchievementType, QuestType } from '../types/user';
+import type { GameType, AchievementType, QuestType, DailyQuest } from '../types/user';
 
 /**
  * Calculate XP earned from a game score
@@ -150,3 +150,9 @@ export function calculateTotalGameXP(
   return Math.floor(totalXP * multiplier);
 }
 
+/**
+ * Calculate progress percentage for a daily quest
+ */
+export const getQuestProgressPercentage = (quest: DailyQuest): number => {
+  return (quest.progress / quest.maxProgress) * 100;
+};

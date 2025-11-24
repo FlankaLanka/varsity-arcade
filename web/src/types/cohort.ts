@@ -5,7 +5,6 @@ export interface Cohort {
   title: string;
   privacy: CohortPrivacy;
   ownerId: string;
-  memberIds: string[];
   inviteCode?: string;
   createdAt: Date;
   description?: string;
@@ -16,10 +15,9 @@ export interface Cohort {
 
 export interface CohortMember {
   userId: string;
-  displayName: string;
+  username: string;
   avatar?: string;
   joinedAt: Date;
-  isOnline: boolean;
   position?: {
     x: number;
     y: number;
@@ -80,4 +78,3 @@ export interface AIChatMessage {
   content: string;
   timestamp: Date;
 }
-

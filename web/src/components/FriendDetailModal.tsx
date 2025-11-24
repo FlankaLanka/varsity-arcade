@@ -6,7 +6,7 @@
 
 import { X, UserMinus, ShieldBan, UserRoundSearch } from 'lucide-react';
 import type { Friend } from '../types/user';
-import { formatActivityText, formatLastSeen } from '../data/mockFriendsData';
+import { formatActivityText, formatLastSeen } from '../utils/formatters';
 
 interface FriendDetailModalProps {
   friend: Friend | null;
@@ -65,15 +65,15 @@ export function FriendDetailModal({
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 border-2 border-neon-pink rounded-lg overflow-hidden flex items-center justify-center bg-gray-800">
             {friend.avatar ? (
-              <img src={friend.avatar} alt={friend.displayName} className="w-full h-full object-cover pixelated" />
+              <img src={friend.avatar} alt={friend.username} className="w-full h-full object-cover pixelated" />
             ) : (
               defaultAvatar
             )}
           </div>
           <div>
-            <p className="text-lg font-['Press_Start_2P'] text-white">{friend.displayName}</p>
+            <p className="text-lg font-['Press_Start_2P'] text-white">{friend.username}</p>
             <p className="text-sm text-gray-400">@{friend.username}</p>
-            <p className="text-xs text-gray-500 mt-1">{formatActivityText(friend.currentActivity)}</p>
+            <p className="text-xs text-gray-500 mt-1">{formatActivityText(friend)}</p>
           </div>
         </div>
 
@@ -111,4 +111,3 @@ export function FriendDetailModal({
     </div>
   );
 }
-

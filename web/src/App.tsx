@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { ArcadeHub } from './pages/ArcadeHub';
 import { AsteroidsGame } from './games/AsteroidsGame';
@@ -11,8 +11,16 @@ import { ProfilePage } from './pages/ProfilePage';
 import { FriendProfilePage } from './pages/FriendProfilePage';
 import CohortsPage from './pages/CohortsPage';
 import CohortRoomPage from './pages/CohortRoomPage';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthPage } from './pages/AuthPage';
 
-function App() {
+function AuthenticatedApp() {
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <AuthPage />;
+  }
+
   return (
     <BrowserRouter>
       <Routes>
@@ -31,6 +39,14 @@ function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
   );
 }
 

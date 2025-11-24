@@ -10,9 +10,21 @@ interface GameFrameProps {
   lives: number;
   wave?: number;
   timeRemaining?: number;
+  overlay?: React.ReactNode;
+  containerClassName?: string;
 }
 
-export const GameFrame = ({ title, onExit, children, score, lives, wave, timeRemaining }: GameFrameProps) => {
+export const GameFrame = ({ 
+  title, 
+  onExit, 
+  children, 
+  score, 
+  lives, 
+  wave, 
+  timeRemaining, 
+  overlay,
+  containerClassName = "aspect-video"
+}: GameFrameProps) => {
   const navigate = useNavigate();
 
   return (
@@ -35,37 +47,48 @@ export const GameFrame = ({ title, onExit, children, score, lives, wave, timeRem
         {/* CRT Scanline Overlay */}
         <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 bg-[length:100%_2px,3px_100%] opacity-20"></div>
         
-        {/* HUD */}
-        <div className="absolute top-4 left-4 z-20 font-pixel text-white text-shadow">
-          <div className="text-neon-cyan text-xs mb-1">SCORE</div>
-          <div className="text-xl">{score.toString()}</div>
-        </div>
-
-        <div className="absolute top-4 right-4 z-20 font-pixel text-white text-right text-shadow">
-          <div className="text-neon-pink text-xs mb-1">LIVES</div>
-          <div className="text-xl">{'♥'.repeat(lives)}</div>
-        </div>
-        
-        {wave && (
-           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 font-pixel text-white text-center text-shadow">
-            <div className="text-neon-green text-xs mb-1">WAVE</div>
-            <div className="text-xl">{wave}</div>
-          </div>
-        )}
-
-        {timeRemaining !== undefined && (
-          <div className="absolute bottom-4 right-4 z-20 font-pixel text-white text-right text-shadow">
-            <div className="text-neon-yellow text-xs mb-1">TIME</div>
-            <div className={`text-xl ${timeRemaining <= 10 ? 'text-red-500 animate-pulse' : ''}`}>
-              {timeRemaining.toString().padStart(2, '0')}
+        {/* HUD - Only show if no overlay is present to avoid visual clutter */}
+        {!overlay && (
+          <>
+            <div className="absolute top-4 left-4 z-20 font-pixel text-white text-shadow">
+              <div className="text-neon-cyan text-xs mb-1">SCORE</div>
+              <div className="text-xl">{score.toString()}</div>
             </div>
-          </div>
+
+            <div className="absolute top-4 right-4 z-20 font-pixel text-white text-right text-shadow">
+              <div className="text-neon-pink text-xs mb-1">LIVES</div>
+              <div className="text-xl">{'♥'.repeat(lives)}</div>
+            </div>
+            
+            {wave && (
+               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 font-pixel text-white text-center text-shadow">
+                <div className="text-neon-green text-xs mb-1">WAVE</div>
+                <div className="text-xl">{wave}</div>
+              </div>
+            )}
+
+            {timeRemaining !== undefined && (
+              <div className="absolute bottom-4 right-4 z-20 font-pixel text-white text-right text-shadow">
+                <div className="text-neon-yellow text-xs mb-1">TIME</div>
+                <div className={`text-xl ${timeRemaining <= 10 ? 'text-red-500 animate-pulse' : ''}`}>
+                  {timeRemaining.toString().padStart(2, '0')}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Game Container */}
-        <div className="aspect-video bg-space-900 relative overflow-hidden">
+        <div className={`${containerClassName} bg-space-900 relative overflow-hidden`}>
           {children}
         </div>
+
+        {/* Overlay (Game Over / Victory Screens) */}
+        {overlay && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center">
+            {overlay}
+          </div>
+        )}
       </div>
 
       {/* Controls Hint */}
@@ -82,4 +105,3 @@ export const GameFrame = ({ title, onExit, children, score, lives, wave, timeRem
     </div>
   );
 };
-

@@ -22,6 +22,12 @@
 - ✅ Built `LeaderboardPage` with synthetic data, filtering, and stats cards
 - ✅ Created `ResultsPage` for game completion and viral loops
 
+### Authentication System
+- ✅ Created `AuthContext` managing user state (login/logout)
+- ✅ Built `AuthPage` with Login and Sign-Up forms
+- ✅ Implemented protected route wrapper in `App.tsx`
+- ✅ Connected Profile UI to real auth state
+
 ### Asteroids: Synonym Shooter
 - ✅ Implemented WASD axis-based movement
 - ✅ Mouse left-click to shoot (removed spacebar)
@@ -68,7 +74,7 @@
 
 ### pH Invaders: Chemistry Challenge
 - ✅ Complete Space Invaders-style game with chemistry education
-- ✅ pH bar management system (0-14 scale, starts at neutral pH 7)
+- ✅ pH bar management system (0-14 scale, color-coded)
 - ✅ Color-coded pH bar (red=acidic, green=neutral, blue=basic)
 - ✅ Dual scoring system:
   - Points from enemy kills (50-100 per enemy)
@@ -81,7 +87,7 @@
 - ✅ Chemical compound drops:
   - Enemies drop 2 chemicals side by side (diverge in opposite directions)
   - White orbs with compound names (HCl, NaOH, NH3, etc.)
-  - Proper subscript rendering for chemical formulas (Na₂CO₃, H₂SO₄)
+  - Proper subscript rendering for chemical formulas (Na₂CO₃, H₂SO₄, etc.)
   - Player must choose which compound to collect based on chemistry knowledge
   - Compounds shift pH based on acidity/basicity and strength
 - ✅ Game mechanics:
@@ -180,12 +186,11 @@
 - Connect to Firebase backend (Auth, Firestore, Realtime DB, Functions, Storage)
 - Implement real leaderboards with user data
 - Add sound effects and background music
-- User authentication and progress tracking
 - Additional mini-games as specified in PRD
 - Wire profile settings to actual persistence
 - Implement friend request/accept system
 - Add real-time presence detection for friends
-- Implement real-time synchronization for whiteboard and battle mode (multiplayer)
+- Implement real-time synchronization for whiteboard/battle (multiplayer)
 - Testing and bug fixes as needed
 
 ## Completed Games

@@ -479,26 +479,35 @@ export const AsteroidsGame = () => {
 
   if (gameOver) {
     return (
-      <GameFrame title="ASTEROIDS" score={score} lives={0} wave={wave} timeRemaining={timeRemaining}>
-         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-50">
-           <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">GAME OVER</h2>
-           <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
-           
-           <div className="flex gap-4">
-             <button 
-                onClick={() => window.location.reload()} 
-                className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
-             >
-               RETRY
-             </button>
-             <button 
-                onClick={() => navigate('/results', { state: { score, game: 'Asteroids' } })}
-                className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
-             >
-               CONTINUE
-             </button>
-           </div>
-         </div>
+      <GameFrame 
+        title="ASTEROIDS" 
+        score={score} 
+        lives={0} 
+        wave={wave} 
+        timeRemaining={timeRemaining}
+        overlay={
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80">
+            <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">GAME OVER</h2>
+            <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
+            
+            <div className="flex gap-4">
+              <button 
+                 onClick={() => window.location.reload()} 
+                 className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
+              >
+                RETRY
+              </button>
+              <button 
+                 onClick={() => navigate('/results', { state: { score, game: 'Asteroids' } })}
+                 className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
+              >
+                CONTINUE
+              </button>
+            </div>
+          </div>
+        }
+      >
+        <canvas ref={canvasRef} className="w-full h-full bg-transparent" />
       </GameFrame>
     );
   }
@@ -515,4 +524,3 @@ export const AsteroidsGame = () => {
     </GameFrame>
   );
 };
-

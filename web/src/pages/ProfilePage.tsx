@@ -1,21 +1,20 @@
-/**
- * Profile Page
- *
- * Full-screen profile view that expands on the dropdown info with
- * achievements, quests, friends, stats, activity, and settings sections.
- */
-
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ReactElement } from 'react';
 import XPProgressBar from '../components/XPProgressBar';
 import AchievementBadge from '../components/AchievementBadge';
 import FriendCard from '../components/FriendCard';
 import { FriendDetailModal } from '../components/FriendDetailModal';
-import { getCurrentUserProfile } from '../data/mockUserData';
-import { getQuestProgressPercentage } from '../data/mockDailyQuests';
-import { mockFriends, removeFriend, blockFriend } from '../data/mockFriendsData';
+import { useAuth } from '../context/AuthContext';
+import { getQuestProgressPercentage } from '../utils/xpSystem'; // Need to move this helper if it was in data
 import type { Achievement, Friend, ActivityEntry, GameType } from '../types/user';
+
+// Helper to calculate quest progress since we removed the mock data file
+// Ideally this should be in a utility file
+const getQuestProgress = (quest: any) => {
+    if (!quest) return 0;
+    return Math.min(100, Math.max(0, (quest.progress / quest.maxProgress) * 100));
+};
 
 const achievementTabs: Array<'all' | 'unlocked' | 'locked'> = ['all', 'unlocked', 'locked'];
 
@@ -27,11 +26,20 @@ const gameLabels: Record<GameType, { label: string; icon: string; accent: string
 
 export function ProfilePage() {
   const navigate = useNavigate();
-  const userProfile = getCurrentUserProfile();
-  const [friends, setFriends] = useState<Friend[]>(() => [...mockFriends]);
+  const { user: userProfile, logout } = useAuth();
+  const [friends, setFriends] = useState<Friend[]>([]);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<(typeof achievementTabs)[number]>('all');
+
+  useEffect(() => {
+    if (userProfile?.friends) {
+      setFriends(userProfile.friends);
+    }
+  }, [userProfile]);
+
+  // Guard clause for type safety, though AuthProvider ensures user is present in this route
+  if (!userProfile) return null;
 
   const filteredAchievements = useMemo(() => {
     if (activeTab === 'all') return userProfile.achievements;
@@ -64,7 +72,12 @@ export function ProfilePage() {
   const activityHistory = useMemo(
     () =>
       [...userProfile.activityHistory].sort(
-        (a, b) => b.date.getTime() - a.date.getTime(),
+        (a, b) => {
+            // Handle Firestore Timestamps if they haven't been converted to Date objects yet
+            const dateA = a.date instanceof Date ? a.date : (a.date as any).toDate();
+            const dateB = b.date instanceof Date ? b.date : (b.date as any).toDate();
+            return dateB.getTime() - dateA.getTime();
+        }
       ),
     [userProfile.activityHistory],
   );
@@ -80,12 +93,15 @@ export function ProfilePage() {
   };
 
   const handleRemoveFriend = (friendId: string) => {
-    removeFriend(friendId);
+    // TODO: Implement with Firestore service
+    console.log('Remove friend', friendId);
+    // Optimistic update
     setFriends(prev => prev.filter(friend => friend.id !== friendId));
   };
 
   const handleBlockFriend = (friendId: string) => {
-    blockFriend(friendId);
+    // TODO: Implement with Firestore service
+    console.log('Block friend', friendId);
     setFriends(prev => prev.filter(friend => friend.id !== friendId));
   };
 
@@ -111,7 +127,7 @@ export function ProfilePage() {
 
         <ActivitySection activities={activityHistory} />
 
-        <SettingsSection />
+        <SettingsSection onLogout={logout} userProfile={userProfile} />
       </div>
 
       <FriendDetailModal
@@ -129,11 +145,13 @@ export function ProfilePage() {
   );
 }
 
+// ... (Sub-components HeaderSection, StatsGrid, AchievementSection remain mostly same but simpler props)
+
 function HeaderSection({
   userProfile,
   defaultAvatar,
 }: {
-  userProfile: ReturnType<typeof getCurrentUserProfile>;
+  userProfile: any; // UserProfile
   defaultAvatar: ReactElement;
 }) {
   return (
@@ -141,14 +159,14 @@ function HeaderSection({
       <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
         <div className="w-24 h-24 bg-gray-800 border-2 border-neon-pink rounded-xl overflow-hidden flex items-center justify-center shadow-[0_0_30px_rgba(255,0,110,0.6)]">
           {userProfile.avatar ? (
-            <img src={userProfile.avatar} alt={userProfile.displayName} className="w-full h-full object-cover pixelated" />
+            <img src={userProfile.avatar} alt={userProfile.username} className="w-full h-full object-cover pixelated" />
           ) : (
             defaultAvatar
           )}
         </div>
 
         <div className="flex-1">
-          <h1 className="text-2xl font-['Press_Start_2P'] text-white mb-2">{userProfile.displayName}</h1>
+          <h1 className="text-2xl font-['Press_Start_2P'] text-white mb-2">{userProfile.username}</h1>
           <p className="text-sm text-gray-400 mb-4">@{userProfile.username}</p>
           <XPProgressBar currentXP={userProfile.totalXP} currentLevel={userProfile.level} />
         </div>
@@ -157,7 +175,7 @@ function HeaderSection({
   );
 }
 
-function StatsGrid({ userProfile }: { userProfile: ReturnType<typeof getCurrentUserProfile> }) {
+function StatsGrid({ userProfile }: { userProfile: any }) {
   const stats = [
     { label: 'Streak', value: `${userProfile.currentStreak} days`, accent: 'text-orange-400', icon: '🔥' },
     { label: 'Games Played', value: userProfile.gamesPlayed, accent: 'text-neon-cyan', icon: '🎮' },
@@ -231,7 +249,8 @@ function AchievementSection({
 }
 
 function DailyQuestSection() {
-  const profile = getCurrentUserProfile();
+  const { user: profile } = useAuth();
+  if (!profile) return null;
   return (
     <section className="p-6 border-2 border-neon-pink/40 bg-gray-900/60 rounded-xl shadow-lg space-y-4">
       <h2 className="text-sm font-['Press_Start_2P'] text-neon-pink flex items-center gap-2">
@@ -242,7 +261,7 @@ function DailyQuestSection() {
       </h2>
       <div className="grid gap-3 md:grid-cols-2">
         {profile.dailyQuests.map(quest => {
-          const progressPercent = getQuestProgressPercentage(quest);
+          const progressPercent = getQuestProgress(quest);
           return (
             <div key={quest.id} className="border border-gray-700 rounded-lg p-4 bg-gray-950/70 space-y-2">
               <div className="flex items-start justify-between">
@@ -267,7 +286,8 @@ function DailyQuestSection() {
 }
 
 function GameStatsSection() {
-  const profile = getCurrentUserProfile();
+  const { user: profile } = useAuth();
+  if (!profile) return null;
   const statValues = Object.values(profile.gameStats);
   const maxHighScore = Math.max(...statValues.map(stat => stat.highScore));
   const maxGamesPlayed = Math.max(...statValues.map(stat => stat.gamesPlayed));
@@ -361,19 +381,23 @@ function FriendsSection({ friends, onFriendClick }: { friends: Friend[]; onFrien
         {friends.map(friend => (
           <FriendCard key={friend.id} friend={friend} onClick={onFriendClick} />
         ))}
+        {friends.length === 0 && (
+            <p className="text-xs text-gray-500 italic col-span-2 text-center">No friends yet.</p>
+        )}
       </div>
-      <p className="text-xs text-gray-500 italic">Tap a friend card to manage or view their profile.</p>
     </section>
   );
 }
 
 function ActivitySection({ activities }: { activities: ActivityEntry[] }) {
   const groupedEntries = activities.reduce<Map<string, ActivityEntry[]>>((map, activity) => {
-    const key = activity.date.toLocaleDateString();
+    // Handle Firestore timestamps
+    const dateObj = activity.date instanceof Date ? activity.date : (activity.date as any).toDate();
+    const key = dateObj.toLocaleDateString();
     if (!map.has(key)) {
       map.set(key, []);
     }
-    map.get(key)?.push(activity);
+    map.get(key)?.push({ ...activity, date: dateObj });
     return map;
   }, new Map<string, ActivityEntry[]>());
 
@@ -424,7 +448,7 @@ function ActivitySection({ activities }: { activities: ActivityEntry[] }) {
   );
 }
 
-function SettingsSection() {
+function SettingsSection({ onLogout, userProfile }: { onLogout: () => void, userProfile: any }) {
   return (
     <section className="p-6 border-2 border-gray-700 bg-gray-900/70 rounded-xl shadow-lg space-y-6">
       <h2 className="text-sm font-['Press_Start_2P'] text-white flex items-center gap-2">
@@ -437,8 +461,8 @@ function SettingsSection() {
       <div className="grid md:grid-cols-3 gap-4 text-sm">
         <div className="border border-gray-700 rounded-lg p-4 bg-gray-950/70 space-y-3">
           <h3 className="text-xs font-['Press_Start_2P'] text-neon-cyan">Account</h3>
-          <SettingField label="Display Name" value="Quantum Nerd" />
-          <SettingField label="Email" value="player@varsityarcade.com" />
+          <SettingField label="Username" value={userProfile.username} />
+          <SettingField label="Email" value={userProfile.email || "player@varsityarcade.com"} />
           <button className="w-full px-3 py-1 border border-gray-600 text-xs text-gray-300 rounded hover:border-neon-cyan hover:text-neon-cyan transition-all">
             Update Password
           </button>
@@ -463,7 +487,10 @@ function SettingsSection() {
         </div>
       </div>
 
-      <button className="px-4 py-3 border-2 border-neon-pink text-neon-pink font-['Press_Start_2P'] text-xs rounded hover:bg-neon-pink/10 transition-all">
+      <button 
+        onClick={onLogout}
+        className="px-4 py-3 border-2 border-neon-pink text-neon-pink font-['Press_Start_2P'] text-xs rounded hover:bg-neon-pink/10 transition-all"
+      >
         Logout
       </button>
     </section>
@@ -497,4 +524,3 @@ function ToggleRow({ label, enabled }: { label: string; enabled: boolean }) {
     </label>
   );
 }
-

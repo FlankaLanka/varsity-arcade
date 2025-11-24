@@ -1,37 +1,89 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Lock, Unlock, Plus, Search, UserPlus } from 'lucide-react';
-import { getFriendsCohorts, getPublicCohorts, joinCohort, createCohort } from '../data/mockCohorts';
+import { getPublicCohorts, createCohort } from '../services/firestore';
+import { useAuth } from '../context/AuthContext';
 import type { Cohort, CohortPrivacy } from '../types/cohort';
 import CreateCohortModal from '../components/CreateCohortModal';
+import { rtdb } from '../lib/firebase';
+import { ref, onValue } from 'firebase/database';
 
 export default function CohortsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'public' | 'friends'>('friends');
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [friendsCohorts, setFriendsCohorts] = useState(getFriendsCohorts());
-  const [publicCohorts, setPublicCohorts] = useState(getPublicCohorts());
+  
+  const [friendsCohorts, setFriendsCohorts] = useState<Cohort[]>([]);
+  const [publicCohorts, setPublicCohorts] = useState<Cohort[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [onlineCounts, setOnlineCounts] = useState<Record<string, number>>({});
 
-  const handleJoinCohort = (cohortId: string) => {
-    const success = joinCohort(cohortId);
-    if (success) {
-      // Refresh lists
-      setFriendsCohorts(getFriendsCohorts());
-      setPublicCohorts(getPublicCohorts());
-      // Navigate to room
-      navigate(`/cohorts/${cohortId}`);
-    } else {
-      // Already a member, just navigate
-      navigate(`/cohorts/${cohortId}`);
-    }
+  useEffect(() => {
+    const fetchCohorts = async () => {
+      setIsLoading(true);
+      try {
+        const publicList = await getPublicCohorts();
+        setPublicCohorts(publicList);
+        
+        // Friend cohorts logic is more complex with Firestore, currently stubbed or filtered
+        // For MVP, we can just use publicList or implement the friend logic fully
+        // setFriendsCohorts(await getFriendsCohorts()); 
+        setFriendsCohorts([]); // Placeholder until friend service is ready
+      } catch (error) {
+        console.error("Failed to fetch cohorts", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchCohorts();
+  }, [user]);
+
+  // Listen to presence data for all cohorts to get online counts
+  useEffect(() => {
+    const allCohorts = [...publicCohorts, ...friendsCohorts];
+    if (allCohorts.length === 0) return;
+
+    const unsubscribes: (() => void)[] = [];
+
+    allCohorts.forEach(cohort => {
+      const presenceRef = ref(rtdb, `cohorts/${cohort.id}/presence`);
+      const unsubscribe = onValue(presenceRef, (snapshot) => {
+        const presenceData = snapshot.val();
+        if (presenceData) {
+          // Count how many users are online (presence is now just true, so count all keys)
+          const onlineCount = Object.keys(presenceData).length;
+          setOnlineCounts(prev => ({ ...prev, [cohort.id]: onlineCount }));
+        } else {
+          setOnlineCounts(prev => ({ ...prev, [cohort.id]: 0 }));
+        }
+      });
+      unsubscribes.push(unsubscribe);
+    });
+
+    return () => {
+      unsubscribes.forEach(unsub => unsub());
+    };
+  }, [publicCohorts, friendsCohorts]);
+
+  const handleJoinCohort = async (cohortId: string) => {
+    if (!user) return;
+    navigate(`/cohorts/${cohortId}`);
   };
 
-  const handleCreateCohort = (title: string, privacy: CohortPrivacy, description?: string) => {
-    createCohort(title, privacy, description);
-    setFriendsCohorts(getFriendsCohorts());
-    setPublicCohorts(getPublicCohorts());
-    setIsCreateModalOpen(false);
+  const handleCreateCohort = async (title: string, privacy: CohortPrivacy, maxMembers: number, description?: string) => {
+    if (!user) return;
+    try {
+      await createCohort(title, privacy, user.id, maxMembers, description);
+      // Refresh lists
+      const publicList = await getPublicCohorts();
+      setPublicCohorts(publicList);
+      setIsCreateModalOpen(false);
+    } catch (error) {
+      console.error("Failed to create cohort", error);
+    }
   };
 
   const displayedCohorts = useMemo(() => {
@@ -100,21 +152,26 @@ export default function CohortsPage() {
         </div>
 
         {/* Cohort Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {displayedCohorts.length > 0 ? (
-            displayedCohorts.map(cohort => (
-              <CohortCard 
-                key={cohort.id} 
-                cohort={cohort} 
-                onJoin={() => handleJoinCohort(cohort.id)} 
-              />
-            ))
-          ) : (
-            <div className="col-span-full text-center py-20 text-gray-500">
-              <p>NO COHORTS FOUND.</p>
-            </div>
-          )}
-        </div>
+        {isLoading ? (
+          <div className="text-center py-20 text-gray-500">Loading cohorts...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {displayedCohorts.length > 0 ? (
+              displayedCohorts.map(cohort => (
+                <CohortCard 
+                  key={cohort.id} 
+                  cohort={cohort} 
+                  onlineCount={onlineCounts[cohort.id] ?? 0}
+                  onJoin={() => handleJoinCohort(cohort.id)} 
+                />
+              ))
+            ) : (
+              <div className="col-span-full text-center py-20 text-gray-500">
+                <p>NO COHORTS FOUND.</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <CreateCohortModal
@@ -126,9 +183,11 @@ export default function CohortsPage() {
   );
 }
 
-function CohortCard({ cohort, onJoin }: { cohort: Cohort; onJoin: () => void }) {
+function CohortCard({ cohort, onlineCount, onJoin }: { cohort: Cohort; onlineCount: number; onJoin: () => void }) {
   const isPrivate = cohort.privacy === 'private';
   const isFriendsOnly = cohort.privacy === 'friends';
+  const maxMembers = cohort.settings?.maxMembers || 5;
+  const isFull = onlineCount >= maxMembers;
   
   return (
     <div className="bg-gray-800/80 border border-gray-700 rounded-xl p-6 hover:border-neon-cyan transition-all hover:shadow-[0_0_15px_rgba(0,255,255,0.2)] group relative overflow-hidden">
@@ -150,14 +209,22 @@ function CohortCard({ cohort, onJoin }: { cohort: Cohort; onJoin: () => void }) 
       <div className="flex items-center justify-between mt-auto">
         <div className="flex items-center gap-2 text-gray-300 text-sm">
           <Users size={16} />
-          <span>{cohort.memberIds.length} / {cohort.settings?.maxMembers || '∞'}</span>
+          <span className={isFull ? 'text-red-400' : ''}>
+            {onlineCount} / {maxMembers}
+          </span>
+          {isFull && <span className="text-xs text-red-400">FULL</span>}
         </div>
         
         <button
           onClick={onJoin}
-          className="px-4 py-2 border border-neon-cyan text-neon-cyan hover:bg-neon-cyan hover:text-black rounded text-xs font-bold transition-colors"
+          disabled={isFull}
+          className={`px-4 py-2 border rounded text-xs font-bold transition-colors ${
+            isFull
+              ? 'border-gray-600 text-gray-500 cursor-not-allowed opacity-50'
+              : 'border-neon-cyan text-neon-cyan hover:bg-neon-cyan hover:text-black'
+          }`}
         >
-          JOIN
+          {isFull ? 'FULL' : 'JOIN'}
         </button>
       </div>
       
@@ -168,4 +235,3 @@ function CohortCard({ cohort, onJoin }: { cohort: Cohort; onJoin: () => void }) 
     </div>
   );
 }
-

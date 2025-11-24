@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot } from 'lucide-react';
 import type { AIChatMessage } from '../types/cohort';
-import { mockUserProfile } from '../data/mockUserData';
+import { useAuth } from '../context/AuthContext';
 
 const MOCK_RESPONSES = [
   { keyword: 'math', response: "That looks like an interesting math problem! Have you tried isolating the variable?" },
@@ -14,6 +14,7 @@ const MOCK_RESPONSES = [
 const DEFAULT_RESPONSE = "I see. Keep going, you're doing great! Let me know if you need specific guidance.";
 
 export default function AIChatInterface() {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<AIChatMessage[]>([
     {
       id: 'welcome',
@@ -86,7 +87,7 @@ export default function AIChatInterface() {
                 <Bot size={16} />
               ) : (
                 <img 
-                  src={mockUserProfile.avatar} 
+                  src={user?.avatar || `https://ui-avatars.com/api/?name=${user?.username || 'User'}&background=random`}
                   alt="Me" 
                   className="w-full h-full rounded-full object-cover"
                 />
@@ -144,4 +145,3 @@ export default function AIChatInterface() {
     </div>
   );
 }
-

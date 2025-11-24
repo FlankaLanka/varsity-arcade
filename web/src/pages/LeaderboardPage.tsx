@@ -3,7 +3,7 @@ import { Trophy, Medal, Award, TrendingUp } from 'lucide-react';
 
 interface LeaderboardEntry {
   rank: number;
-  displayName: string;
+  username: string;
   score: number;
   gameType: string;
   isCurrentUser?: boolean;
@@ -23,7 +23,7 @@ const generateSyntheticData = (gameType: string, period: string): LeaderboardEnt
   for (let i = 0; i < 20; i++) {
     entries.push({
       rank: i + 1,
-      displayName: names[i] || `Player${i + 1}`,
+      username: names[i] || `Player${i + 1}`,
       score: baseScore - (i * 250) + Math.floor(Math.random() * 500),
       gameType,
       isCurrentUser: i === 7 // Mark 8th place as current user for demo
@@ -156,13 +156,13 @@ export const LeaderboardPage = () => {
                           : 'border-space-600 bg-space-700'
                       } flex items-center justify-center`}>
                         <span className="text-xs font-pixel text-neon-cyan">
-                          {entry.displayName.charAt(0)}
+                          {entry.username.charAt(0)}
                         </span>
                       </div>
                       <span className={`font-mono text-sm ${
                         entry.isCurrentUser ? 'text-neon-cyan font-bold' : 'text-white'
                       }`}>
-                        {entry.displayName}
+                        {entry.username}
                         {entry.isCurrentUser && (
                           <span className="ml-2 text-xs text-neon-green">(YOU)</span>
                         )}

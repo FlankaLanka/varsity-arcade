@@ -1,17 +1,9 @@
-/**
- * Profile Dropdown Component
- * 
- * Displays user profile information, XP progress, achievements, daily quests, and stats.
- * Appears as a dropdown from the profile icon in the header.
- */
-
 import { useNavigate } from 'react-router-dom';
 import { Trophy, Target, Flame, GamepadIcon, TrendingUp } from 'lucide-react';
 import XPProgressBar from './XPProgressBar';
 import AchievementBadge from './AchievementBadge';
-import { getCurrentUserProfile } from '../data/mockUserData';
-import { getRecentAchievements } from '../data/mockAchievements';
-import { getActiveDailyQuests, getQuestProgressPercentage } from '../data/mockDailyQuests';
+import { useAuth } from '../context/AuthContext';
+import { getQuestProgressPercentage } from '../utils/xpSystem';
 
 interface ProfileDropdownProps {
   isOpen: boolean;
@@ -22,13 +14,26 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
   if (!isOpen) return null;
 
   const navigate = useNavigate();
-  const userProfile = getCurrentUserProfile();
-  const recentAchievements = getRecentAchievements(4);
-  const activeDailyQuests = getActiveDailyQuests();
+  const { user: userProfile, logout } = useAuth();
+  
+  if (!userProfile) return null;
+
+  // Logic to get recent data from profile
+  const recentAchievements = userProfile.achievements
+    .filter(a => a.isUnlocked)
+    .sort((a, b) => (b.unlockedAt?.getTime() || 0) - (a.unlockedAt?.getTime() || 0))
+    .slice(0, 4);
+    
+  const activeDailyQuests = userProfile.dailyQuests.filter(q => !q.completed);
 
   const handleProfileNavigation = () => {
     onClose();
     navigate('/profile');
+  };
+
+  const handleLogout = () => {
+    onClose();
+    logout();
   };
 
   // Default pixel art avatar
@@ -68,7 +73,7 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
               {userProfile.avatar ? (
                 <img 
                   src={userProfile.avatar} 
-                  alt={userProfile.displayName}
+                  alt={userProfile.username}
                   className="w-full h-full object-cover pixelated"
                 />
               ) : (
@@ -79,7 +84,7 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
             {/* User Info */}
             <div className="flex-1">
               <h3 className="text-lg font-['Press_Start_2P'] text-white mb-1">
-                {userProfile.displayName}
+                {userProfile.username}
               </h3>
               <p className="text-sm text-gray-400">
                 @{userProfile.username}
@@ -235,7 +240,7 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
             </button>
             <button 
               className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-gray-300 hover:bg-gray-800 hover:border-neon-pink transition-all"
-              onClick={() => {/* TODO: Implement logout */}}
+              onClick={handleLogout}
             >
               Logout
             </button>
@@ -245,4 +250,3 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
     </div>
   );
 }
-

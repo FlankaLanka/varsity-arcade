@@ -8,7 +8,6 @@
 export interface UserProfile {
   id: string;
   username: string;
-  displayName: string;
   avatar?: string;
   totalXP: number;
   level: number;
@@ -46,7 +45,6 @@ export interface DailyQuest {
 export interface Friend {
   id: string;
   username: string;
-  displayName: string;
   avatar?: string;
   isOnline: boolean;
   currentActivity: 'asteroids' | 'pacman-math' | 'ph-invaders' | 'online' | 'offline';

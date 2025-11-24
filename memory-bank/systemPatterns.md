@@ -21,6 +21,7 @@
 - **`FriendCard.tsx`**: Friend card component with avatar, status, and activity
 
 ### Page Components
+- **`AuthPage.tsx`**: Login and Sign-up page with toggleable forms
 - **`ArcadeHub.tsx`**: Game selection hub with game cards
 - **`LeaderboardPage.tsx`**: Leaderboard with filtering and stats
 - **`ResultsPage.tsx`**: Game completion screen with viral loops
@@ -80,6 +81,7 @@ const loop = (currentTime: number) => {
 - **Cooperative Defense**: Battle minigame emphasizes teamwork and creativity (drawings become content)
 
 ## Integration Points
+- **Auth Context**: `AuthContext.tsx` manages global user state (user, login, signup, logout).
 - **Firebase Auth**: User authentication (pending implementation)
 - **Firestore**: Leaderboard data, user progress, achievements, daily quests, friend relationships (pending implementation)
 - **Realtime DB**: Online player count, friend presence/activity (pending implementation)
@@ -106,6 +108,13 @@ const loop = (currentTime: number) => {
 - Mock friend data with online status and activity tracking
 
 ## Key Flows
+
+### Authentication Flow
+1. User visits site
+2. If not authenticated (`!user`), `App` renders `AuthPage`
+3. User logs in or signs up
+4. `AuthProvider` updates state, persists user to local storage
+5. `App` renders `AuthenticatedApp` (Layout + Routing)
 
 ### Game Session Flow
 1. User selects game from hub

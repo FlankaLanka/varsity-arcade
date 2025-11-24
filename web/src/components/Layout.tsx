@@ -1,15 +1,16 @@
 import React, { useState, useRef } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { StarfieldBackground } from './StarfieldBackground';
-import { Gamepad2, Trophy, Users, User, UserCircle2 } from 'lucide-react';
+import { Gamepad2, Trophy, Users, UserCircle2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import ProfileDropdown from './ProfileDropdown';
 import FriendsList from './FriendsList';
 import { useClickOutside } from '../hooks/useClickOutside';
-import { mockFriends } from '../data/mockFriendsData';
+import { useAuth } from '../context/AuthContext';
 
 export const Layout = () => {
   const location = useLocation();
+  const { user } = useAuth();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isFriendsOpen, setIsFriendsOpen] = useState(false);
   
@@ -21,7 +22,7 @@ export const Layout = () => {
   useClickOutside(friendsRef, () => setIsFriendsOpen(false), isFriendsOpen);
 
   // Count online friends for badge
-  const onlineFriendsCount = mockFriends.filter(f => f.isOnline).length;
+  const onlineFriendsCount = user?.friends?.filter(f => f.isOnline).length || 0;
 
   const NavItem = ({ to, icon: Icon, label }: { to: string; icon: any; label: string }) => {
     const isActive = location.pathname === to;
@@ -46,7 +47,7 @@ export const Layout = () => {
       <StarfieldBackground />
       
       {/* Header */}
-      <header className="border-b-2 border-space-700 bg-space-900/80 backdrop-blur-md sticky top-0 z-50">
+      <header className="border-b-2 border-space-700 bg-space-900/80 backdrop-blur-md sticky top-0 z-[100]">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3 group">
             <div className="w-8 h-8 bg-neon-pink shadow-[2px_2px_0px_0px_rgba(255,0,255,0.8)] group-hover:animate-pulse"></div>
@@ -136,4 +137,3 @@ export const Layout = () => {
     </div>
   );
 };
-

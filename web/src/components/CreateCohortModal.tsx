@@ -5,13 +5,14 @@ import type { CohortPrivacy } from '../types/cohort';
 interface CreateCohortModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (title: string, privacy: CohortPrivacy, description?: string) => void;
+  onCreate: (title: string, privacy: CohortPrivacy, maxMembers: number, description?: string) => void;
 }
 
 export default function CreateCohortModal({ isOpen, onClose, onCreate }: CreateCohortModalProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [privacy, setPrivacy] = useState<CohortPrivacy>('public');
+  const [maxMembers, setMaxMembers] = useState(5);
 
   if (!isOpen) return null;
 
@@ -19,16 +20,17 @@ export default function CreateCohortModal({ isOpen, onClose, onCreate }: CreateC
     e.preventDefault();
     if (!title.trim()) return;
     
-    onCreate(title, privacy, description);
+    onCreate(title, privacy, maxMembers, description);
     
     // Reset form
     setTitle('');
     setDescription('');
     setPrivacy('public');
+    setMaxMembers(5);
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div 
         className="w-full max-w-md bg-gray-900 border-2 border-neon-purple rounded-xl shadow-[0_0_20px_rgba(184,41,235,0.3)] relative overflow-hidden"
         onClick={e => e.stopPropagation()}
@@ -114,6 +116,24 @@ export default function CreateCohortModal({ isOpen, onClose, onCreate }: CreateC
               {privacy === 'friends' && "Only your friends can see and join."}
               {privacy === 'private' && "Invite code required to join."}
             </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-neon-cyan font-bold text-sm tracking-wider">MAX MEMBERS</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="1"
+                max="5"
+                value={maxMembers}
+                onChange={(e) => setMaxMembers(Number(e.target.value))}
+                className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-neon-purple"
+              />
+              <span className="text-neon-purple font-['Press_Start_2P'] text-sm w-12 text-center">
+                {maxMembers}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">Maximum number of members allowed in this cohort (1-5)</p>
           </div>
           
           <button

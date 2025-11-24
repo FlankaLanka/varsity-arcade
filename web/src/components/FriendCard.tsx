@@ -7,7 +7,7 @@
 
 import type { KeyboardEvent } from 'react';
 import type { Friend } from '../types/user';
-import { formatActivityText } from '../data/mockFriendsData';
+import { formatActivityText } from '../utils/formatters';
 
 interface FriendCardProps {
   friend: Friend;
@@ -70,7 +70,7 @@ export default function FriendCard({ friend, onClick }: FriendCardProps) {
           {friend.avatar ? (
             <img 
               src={friend.avatar} 
-              alt={friend.displayName}
+              alt={friend.username}
               className="w-full h-full object-cover pixelated"
             />
           ) : (
@@ -93,12 +93,12 @@ export default function FriendCard({ friend, onClick }: FriendCardProps) {
       <div className="flex-1 min-w-0">
         {/* Username */}
         <div className="text-sm font-['Press_Start_2P'] text-white truncate">
-          {friend.displayName}
+          {friend.username}
         </div>
 
         {/* Activity */}
         <div className={`text-xs ${activityColors[friend.currentActivity]} truncate mt-1`}>
-          {formatActivityText(friend.currentActivity)}
+          {formatActivityText(friend)}
         </div>
       </div>
 
@@ -115,4 +115,3 @@ export default function FriendCard({ friend, onClick }: FriendCardProps) {
     </div>
   );
 }
-

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { GameFrame } from '../components/GameFrame';
 
 interface Enemy {
   x: number;
@@ -672,90 +673,51 @@ export const PHInvadersGame = () => {
     const victory = aliveEnemies.length === 0;
     
     return (
-      <div className="max-w-4xl mx-auto">
-        {/* Game Header */}
-        <div className="flex items-center justify-between mb-4">
-          <button 
-            onClick={() => navigate('/')} 
-            className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
-          >
-            <span className="font-pixel text-xs">EXIT GAME</span>
-          </button>
-          <h1 className="font-pixel text-xl text-neon-yellow shadow-neon">pH INVADERS</h1>
-          <div className="w-20"></div>
-        </div>
-
-        {/* Arcade Cabinet Frame */}
-        <div className="relative border-4 border-space-700 rounded-lg bg-black p-1 shadow-[0_0_20px_rgba(0,243,255,0.2)]">
-          <div className="bg-space-900 relative overflow-hidden" style={{ height: '600px', width: '100%' }}>
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-50">
-              <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">
-                {victory ? 'VICTORY!' : 'GAME OVER'}
-              </h2>
-              <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
-              <div className="text-lg text-neon-cyan font-pixel mb-4">Final pH: {pH.toFixed(1)}</div>
-              
-              <div className="flex gap-4">
-                <button 
-                  onClick={() => window.location.reload()} 
-                  className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
-                >
-                  RETRY
-                </button>
-                <button 
-                  onClick={() => navigate('/results', { state: { score, game: 'pH Invaders' } })}
-                  className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
-                >
-                  CONTINUE
-                </button>
-              </div>
+      <GameFrame
+        title="pH INVADERS"
+        score={score}
+        lives={lives}
+        timeRemaining={timeRemaining}
+        containerClassName="aspect-[4/3]"
+        overlay={
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80">
+            <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">
+              {victory ? 'VICTORY!' : 'GAME OVER'}
+            </h2>
+            <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
+            <div className="text-lg text-neon-cyan font-pixel mb-4">Final pH: {pH.toFixed(1)}</div>
+            
+            <div className="flex gap-4">
+              <button 
+                onClick={() => window.location.reload()} 
+                className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
+              >
+                RETRY
+              </button>
+              <button 
+                onClick={() => navigate('/results', { state: { score, game: 'pH Invaders' } })}
+                className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
+              >
+                CONTINUE
+              </button>
             </div>
           </div>
-        </div>
-      </div>
+        }
+      >
+        <canvas ref={canvasRef} className="block w-full h-full" />
+      </GameFrame>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      {/* Game Header */}
-      <div className="flex items-center justify-between mb-4">
-        <button 
-          onClick={() => navigate('/')} 
-          className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
-        >
-          <span className="font-pixel text-xs">EXIT GAME</span>
-        </button>
-        <h1 className="font-pixel text-xl text-neon-yellow shadow-neon">pH INVADERS</h1>
-        <div className="w-20"></div>
-      </div>
-
-      {/* Arcade Cabinet Frame */}
-      <div className="relative border-4 border-space-700 rounded-lg bg-black p-1 shadow-[0_0_20px_rgba(0,243,255,0.2)]">
-        {/* CRT Scanline Overlay */}
-        <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 bg-[length:100%_2px,3px_100%] opacity-20"></div>
-        
-        {/* HUD */}
-        <div className="absolute top-4 left-4 z-20 font-pixel text-white text-shadow">
-          <div className="text-neon-cyan text-xs mb-1">SCORE</div>
-          <div className="text-xl">{score.toString()}</div>
-        </div>
-
-        <div className="absolute top-4 right-4 z-20 font-pixel text-white text-right text-shadow">
-          <div className="text-neon-pink text-xs mb-1">LIVES</div>
-          <div className="text-xl">{'♥'.repeat(lives)}</div>
-        </div>
-
-        <div className="absolute bottom-4 right-4 z-20 font-pixel text-white text-right text-shadow">
-          <div className="text-neon-yellow text-xs mb-1">TIME</div>
-          <div className={`text-xl ${timeRemaining <= 10 ? 'text-red-500 animate-pulse' : ''}`}>
-            {timeRemaining.toString().padStart(2, '0')}
-          </div>
-        </div>
-
-        {/* Game Container - Taller for pH Invaders */}
-        <div className="bg-space-900 relative overflow-hidden" style={{ height: '600px', width: '100%' }}>
-          <canvas ref={canvasRef} className="w-full h-full bg-transparent" />
+    <GameFrame
+        title="pH INVADERS"
+        score={score}
+        lives={lives}
+        timeRemaining={timeRemaining}
+        containerClassName="aspect-[4/3]"
+    >
+      <canvas ref={canvasRef} className="w-full h-full bg-transparent" />
       
       {/* pH Bar - Bottom left, same level as timer */}
       <div className="absolute bottom-4 left-4 z-30 bg-space-800/90 border border-neon-cyan px-3 py-2 rounded">
@@ -799,9 +761,6 @@ export const PHInvadersGame = () => {
           </div>
         </div>
       )}
-        </div>
-      </div>
-    </div>
+    </GameFrame>
   );
 };
-
