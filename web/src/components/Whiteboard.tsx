@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Eraser, Undo, Redo, Trash2, PenTool, Check, Circle, Square, Triangle } from 'lucide-react';
+import { Eraser, Undo, Redo, Trash2, PenTool, Check, Circle, Square, Triangle, Move } from 'lucide-react';
 import { ref, onValue, push, set, remove, serverTimestamp, onDisconnect } from 'firebase/database';
 import { rtdb } from '../lib/firebase';
 import type { WhiteboardDrawing } from '../types/cohort';
@@ -44,6 +44,14 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
   const [isVerifying, setIsVerifying] = useState(false);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursor>>({});
   const lastCursorPosition = useRef<{ x: number; y: number } | null>(null);
+  
+  // Camera/Viewport state for infinite canvas (use refs for instant updates)
+  const cameraX = useRef(0);
+  const cameraY = useRef(0);
+  const [, setCameraUpdate] = useState(0); // Force re-render trigger
+  const isPanning = useRef(false);
+  const [isPanningState, setIsPanningState] = useState(false); // State for effect dependency
+  const panStart = useRef<{ x: number; y: number } | null>(null);
 
   // Realtime Database Sync for drawings
   useEffect(() => {
@@ -159,6 +167,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
   }, [drawings]); // Redraw when drawings update
 
   // Redraw canvas whenever drawings or cursors change
+  // Note: Camera changes trigger redraw directly in handleMouseMove for instant updates
   useEffect(() => {
     redraw();
   }, [drawings, currentPath, remoteCursors]); // Depend on currentPath and remoteCursors
@@ -172,23 +181,30 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Draw grid background
+    // Save context and apply camera transform
+    ctx.save();
+    ctx.translate(-cameraX.current, -cameraY.current);
+    
+    // Draw grid background (infinite)
     drawGrid(ctx, canvas.width, canvas.height);
 
-    // Draw all saved drawings
+    // Draw all saved drawings (in world space)
     drawings.forEach(drawing => {
       drawPath(ctx, drawing.path, drawing.color, drawing.brushSize);
     });
 
-    // Draw current path being drawn
+    // Draw current path being drawn (in world space)
     if (currentPath.length > 0) {
       drawPath(ctx, currentPath, activeTool === 'eraser' ? '#000000' : color, brushSize);
     }
 
-    // Draw remote cursors
+    // Draw remote cursors (in world space)
     Object.values(remoteCursors).forEach(cursor => {
       drawCursor(ctx, cursor);
     });
+    
+    // Restore context
+    ctx.restore();
   };
 
   const drawCursor = (ctx: CanvasRenderingContext2D, cursor: RemoteCursor) => {
@@ -236,17 +252,33 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
     ctx.lineWidth = 1;
     const gridSize = 40;
 
-    for (let x = 0; x <= width; x += gridSize) {
+    // Calculate visible grid bounds in world space
+    // Since we're already inside the camera transform, we work in world coordinates
+    const worldLeft = cameraX.current;
+    const worldRight = cameraX.current + width;
+    const worldTop = cameraY.current;
+    const worldBottom = cameraY.current + height;
+    
+    // Add padding to ensure no gaps when panning
+    const padding = gridSize * 3;
+    const startX = Math.floor((worldLeft - padding) / gridSize) * gridSize;
+    const endX = Math.ceil((worldRight + padding) / gridSize) * gridSize;
+    const startY = Math.floor((worldTop - padding) / gridSize) * gridSize;
+    const endY = Math.ceil((worldBottom + padding) / gridSize) * gridSize;
+
+    // Draw vertical lines (in world space - no need to convert to screen)
+    for (let x = startX; x <= endX; x += gridSize) {
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
+      ctx.moveTo(x, startY);
+      ctx.lineTo(x, endY);
       ctx.stroke();
     }
 
-    for (let y = 0; y <= height; y += gridSize) {
+    // Draw horizontal lines (in world space - no need to convert to screen)
+    for (let y = startY; y <= endY; y += gridSize) {
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
+      ctx.moveTo(startX, y);
+      ctx.lineTo(endX, y);
       ctx.stroke();
     }
   };
@@ -332,11 +364,110 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
     const canvas = canvasRef.current;
     if (!canvas) return;
     
+    // Don't handle panning here - global handlers take care of it
+    // This allows panning to continue even when mouse leaves canvas
+    
     const coords = getCoordinates(e, canvas);
     broadcastCursor(coords.x, coords.y);
     
     // Also call the draw function for drawing logic
     draw(e);
+  };
+  
+  // Handle middle mouse button for panning
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 1) { // Middle mouse button
+      e.preventDefault();
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      const rect = canvas.getBoundingClientRect();
+      isPanning.current = true;
+      setIsPanningState(true); // Update state to trigger effect
+      panStart.current = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+    } else {
+      // Regular drawing
+      startDrawing(e);
+    }
+  };
+  
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (e.button === 1) { // Middle mouse button
+      isPanning.current = false;
+      setIsPanningState(false); // Update state to trigger effect cleanup
+      panStart.current = null;
+    } else {
+      stopDrawing();
+    }
+  };
+  
+  // Global mouse handlers for panning (allows panning outside canvas)
+  useEffect(() => {
+    if (!isPanningState) return; // Only set up listeners when panning
+    
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (!isPanning.current || !panStart.current) return;
+      
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      const rect = canvas.getBoundingClientRect();
+      const currentX = e.clientX - rect.left;
+      const currentY = e.clientY - rect.top;
+      
+      const deltaX = currentX - panStart.current.x;
+      const deltaY = currentY - panStart.current.y;
+      
+      // Update camera position instantly using refs
+      cameraX.current -= deltaX;
+      cameraY.current -= deltaY;
+      
+      // Trigger re-render for grid update
+      setCameraUpdate(prev => prev + 1);
+      
+      // Redraw immediately
+      redraw();
+      
+      panStart.current = { x: currentX, y: currentY };
+    };
+    
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      if (e.button === 1) { // Middle mouse button
+        isPanning.current = false;
+        setIsPanningState(false);
+        panStart.current = null;
+      }
+    };
+    
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isPanningState]); // Re-run when panning state changes
+  
+  // Prevent context menu on middle mouse
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      if (e.button === 1) {
+        e.preventDefault();
+      }
+    };
+    
+    window.addEventListener('contextmenu', handleContextMenu);
+    return () => window.removeEventListener('contextmenu', handleContextMenu);
+  }, []);
+  
+  const handleRecenter = () => {
+    cameraX.current = 0;
+    cameraY.current = 0;
+    setCameraUpdate(prev => prev + 1);
+    redraw();
   };
 
   // Remove cursor when mouse leaves canvas
@@ -373,7 +504,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
         set(newDrawingRef, { ...newDrawing, id: newDrawingRef.key });
       } else {
         // Local mode
-        setDrawings([...drawings, newDrawing]);
+      setDrawings([...drawings, newDrawing]);
       }
       
       setRedoStack([]); // Clear redo stack
@@ -393,9 +524,13 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
       clientY = (e as React.MouseEvent).clientY;
     }
 
+    // Convert screen coordinates to world coordinates
+    const screenX = clientX - rect.left;
+    const screenY = clientY - rect.top;
+
     return {
-      x: clientX - rect.left,
-      y: clientY - rect.top
+      x: screenX + cameraX.current,
+      y: screenY + cameraY.current
     };
   };
 
@@ -406,12 +541,12 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
     // For synced mode, we'd need to track ownership of strokes.
     
     if (!cohortId) {
-      if (drawings.length === 0) return;
-      const newDrawings = [...drawings];
-      const removed = newDrawings.pop();
-      if (removed) {
-        setDrawings(newDrawings);
-        setRedoStack([...redoStack, removed]);
+    if (drawings.length === 0) return;
+    const newDrawings = [...drawings];
+    const removed = newDrawings.pop();
+    if (removed) {
+      setDrawings(newDrawings);
+      setRedoStack([...redoStack, removed]);
       }
     } else {
         // TODO: Implement synced undo (remove my last stroke)
@@ -421,12 +556,12 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
 
   const handleRedo = () => {
     if (!cohortId) {
-        if (redoStack.length === 0) return;
-        const newRedoStack = [...redoStack];
-        const restored = newRedoStack.pop();
-        if (restored) {
-        setDrawings([...drawings, restored]);
-        setRedoStack(newRedoStack);
+    if (redoStack.length === 0) return;
+    const newRedoStack = [...redoStack];
+    const restored = newRedoStack.pop();
+    if (restored) {
+      setDrawings([...drawings, restored]);
+      setRedoStack(newRedoStack);
         }
     }
   };
@@ -437,8 +572,8 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
             const whiteboardRef = ref(rtdb, `cohorts/${cohortId}/whiteboard`);
             remove(whiteboardRef);
         } else {
-            setDrawings([]);
-            setRedoStack([]);
+      setDrawings([]);
+      setRedoStack([]);
         }
     }
   };
@@ -455,10 +590,16 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
     <div className="flex-1 relative bg-gray-900 cursor-crosshair">
       <canvas
         ref={canvasRef}
-        onMouseDown={startDrawing}
+        onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
-        onMouseUp={stopDrawing}
-        onMouseLeave={handleMouseLeave}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={(e) => {
+          // Don't stop panning on mouse leave - let global handlers manage it
+          // Only handle cursor cleanup if not panning
+          if (!isPanning.current) {
+            handleMouseLeave();
+          }
+        }}
         onTouchStart={startDrawing}
         onTouchMove={draw}
         onTouchEnd={stopDrawing}
@@ -559,8 +700,15 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
         </div>
       </div>
 
-      {/* Verify Button - Bottom Right */}
-      <div className="absolute bottom-4 right-4 z-40">
+      {/* Action Buttons - Bottom Right */}
+      <div className="absolute bottom-4 right-4 z-40 flex flex-col gap-3">
+        <button
+          onClick={handleRecenter}
+          className="w-12 h-12 bg-gray-800 hover:bg-gray-700 border border-gray-600 text-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110"
+          title="Recenter Canvas"
+        >
+          <Move size={20} />
+        </button>
         <button
           onClick={handleVerify}
           disabled={drawings.length === 0 || isVerifying}

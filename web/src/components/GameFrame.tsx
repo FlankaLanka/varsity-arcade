@@ -50,30 +50,30 @@ export const GameFrame = ({
         {/* HUD - Only show if no overlay is present to avoid visual clutter */}
         {!overlay && (
           <>
-            <div className="absolute top-4 left-4 z-20 font-pixel text-white text-shadow">
-              <div className="text-neon-cyan text-xs mb-1">SCORE</div>
-              <div className="text-xl">{score.toString()}</div>
-            </div>
+        <div className="absolute top-4 left-4 z-20 font-pixel text-white text-shadow">
+          <div className="text-neon-cyan text-xs mb-1">SCORE</div>
+          <div className="text-xl">{score.toString()}</div>
+        </div>
 
-            <div className="absolute top-4 right-4 z-20 font-pixel text-white text-right text-shadow">
-              <div className="text-neon-pink text-xs mb-1">LIVES</div>
-              <div className="text-xl">{'♥'.repeat(lives)}</div>
-            </div>
-            
-            {wave && (
-               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 font-pixel text-white text-center text-shadow">
-                <div className="text-neon-green text-xs mb-1">WAVE</div>
-                <div className="text-xl">{wave}</div>
-              </div>
-            )}
+        <div className="absolute top-4 right-4 z-20 font-pixel text-white text-right text-shadow">
+          <div className="text-neon-pink text-xs mb-1">LIVES</div>
+          <div className="text-xl">{'♥'.repeat(lives)}</div>
+        </div>
+        
+        {wave && (
+           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 font-pixel text-white text-center text-shadow">
+            <div className="text-neon-green text-xs mb-1">WAVE</div>
+            <div className="text-xl">{wave}</div>
+          </div>
+        )}
 
-            {timeRemaining !== undefined && (
-              <div className="absolute bottom-4 right-4 z-20 font-pixel text-white text-right text-shadow">
-                <div className="text-neon-yellow text-xs mb-1">TIME</div>
-                <div className={`text-xl ${timeRemaining <= 10 ? 'text-red-500 animate-pulse' : ''}`}>
-                  {timeRemaining.toString().padStart(2, '0')}
-                </div>
-              </div>
+        {timeRemaining !== undefined && (
+          <div className="absolute bottom-4 right-4 z-20 font-pixel text-white text-right text-shadow">
+            <div className="text-neon-yellow text-xs mb-1">TIME</div>
+            <div className={`text-xl ${timeRemaining <= 10 ? 'text-red-500 animate-pulse' : ''}`}>
+              {timeRemaining.toString().padStart(2, '0')}
+            </div>
+          </div>
             )}
           </>
         )}

@@ -1,8 +1,10 @@
 # Active Context
 
-_Last updated: 2025-01-XX_
+_Last updated: 2025-11-24 (Session 2)_
 
 ## Current Focus
+- **Firebase-Only Architecture**: All multiplayer state (whiteboard drawings, cursors, battle gameplay) uses Firebase Realtime Database. Battle uses a host-based model where one client runs the authoritative simulation.
+- **Whiteboard Battle Multiplayer Fixes**: Projectile sync, victory detection, and session cleanup all working correctly.
 - **User Authentication**: Implemented basic login/sign-up flow with mock persistence.
 - **User Profile**: Integrated authentication with profile system.
 - All four games/experiences are complete and playable:
@@ -25,6 +27,16 @@ _Last updated: 2025-01-XX_
   - Added **Primitive Shape Tools**: Square/Rectangle, Circle, and Triangle.
   - Implemented "drag-to-draw" preview logic for shapes.
   - Shapes are generated as paths (polygons), ensuring full compatibility with the Whiteboard Battle minigame (they become enemies).
+
+- **Firebase Battle System (Whiteboard Battle)**:
+  - Reverted to Firebase Realtime Database for all battle gameplay state.
+  - Host-based architecture: first member (by sorted user ID) acts as authoritative host, running game simulation and syncing to Firebase.
+  - All clients read battle state from Firebase RTDB (`cohorts/{cohortId}/battle/`) and render accordingly.
+  - Host handles enemy AI, collisions, and win/loss conditions; non-host clients update their own player positions and projectiles.
+  - **Projectile Sync**: Each player only fires their own bullets; projectile IDs use Firebase-safe format (no dots). Projectile positions synced at 10Hz, with cleanup when out of range.
+  - **Victory Detection**: Host broadcasts win/loss to RTDB; fallback `useEffect` ensures all clients see victory if host disconnects mid-match.
+  - **Session Cleanup**: Host clears stale projectiles from RTDB on battle init; cohort auto-resets to whiteboard mode when all users leave.
+  - **Exit Button**: Manual "X" button in bottom-right allows any user to end the battle for everyone (with confirmation).
 
 - **Minigame Rework (Whiteboard Battle)**:
   - Transitioned from `matter.js` physics to a custom **Cooperative Defense** mode.
@@ -90,12 +102,11 @@ _Last updated: 2025-01-XX_
 
 ## Next Steps
 1. Connect to Firebase backend for real leaderboards and user data
-2. Implement additional mini-games as specified in PRD
-3. Add sound effects and music
-4. Wire profile settings to actual persistence
-5. Implement friend request/accept system
-6. Add real-time presence detection for friends
-7. Implement real-time synchronization for whiteboard/battle (multiplayer)
+3. Implement additional mini-games as specified in PRD
+4. Add sound effects and music
+5. Wire profile settings to actual persistence
+6. Implement friend request/accept system
+7. Add real-time presence detection for friends
 
 ## Decisions & Conventions
 - **Visual Style**: Pixelated outer space theme (retro fonts, deep cosmos backgrounds) for the entire UI.

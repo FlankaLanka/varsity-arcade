@@ -681,27 +681,27 @@ export const PHInvadersGame = () => {
         containerClassName="aspect-[4/3]"
         overlay={
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80">
-            <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">
-              {victory ? 'VICTORY!' : 'GAME OVER'}
-            </h2>
-            <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
-            <div className="text-lg text-neon-cyan font-pixel mb-4">Final pH: {pH.toFixed(1)}</div>
-            
-            <div className="flex gap-4">
-              <button 
-                onClick={() => window.location.reload()} 
-                className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
-              >
-                RETRY
-              </button>
-              <button 
-                onClick={() => navigate('/results', { state: { score, game: 'pH Invaders' } })}
-                className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
-              >
-                CONTINUE
-              </button>
+              <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">
+                {victory ? 'VICTORY!' : 'GAME OVER'}
+              </h2>
+              <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
+              <div className="text-lg text-neon-cyan font-pixel mb-4">Final pH: {pH.toFixed(1)}</div>
+              
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
+                >
+                  RETRY
+                </button>
+                <button 
+                  onClick={() => navigate('/results', { state: { score, game: 'pH Invaders' } })}
+                  className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
+                >
+                  CONTINUE
+                </button>
+              </div>
             </div>
-          </div>
         }
       >
         <canvas ref={canvasRef} className="block w-full h-full" />
@@ -717,7 +717,7 @@ export const PHInvadersGame = () => {
         timeRemaining={timeRemaining}
         containerClassName="aspect-[4/3]"
     >
-      <canvas ref={canvasRef} className="w-full h-full bg-transparent" />
+          <canvas ref={canvasRef} className="w-full h-full bg-transparent" />
       
       {/* pH Bar - Bottom left, same level as timer */}
       <div className="absolute bottom-4 left-4 z-30 bg-space-800/90 border border-neon-cyan px-3 py-2 rounded">

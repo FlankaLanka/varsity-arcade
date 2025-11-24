@@ -4,7 +4,7 @@
 - Workspace: `/Users/frankyang/Desktop/ai-tutor-nerdy` on macOS (Darwin 24.5.0).
 - Tools: Cursor + AI agent, zsh shell.
 - Version control: Git
-- Monorepo structure: `/web` (frontend), `/functions` (backend, pending)
+- Monorepo structure: `/web` (frontend), `/functions` (backend, pending), `/server` (planned Colyseus battle server)
 
 ## Current Stack
 
@@ -22,7 +22,7 @@
 - **Game Loop**: `requestAnimationFrame` for 60fps updates
 - **Rendering**: Pixel-perfect rendering with `imageSmoothingEnabled: false`
 
-### Backend (Planned)
+### Backend
 - **Firebase**: Auth, Firestore, Realtime DB, Functions, Storage
 - **Hosting**: Firebase Hosting (pending)
 
@@ -35,16 +35,6 @@
 - Canvas rendering with crisp pixel art (no image smoothing).
 
 ## Dependencies
-
-### Frontend (`/web/package.json`)
-- `react`, `react-dom`: UI framework
-- `react-router-dom`: Routing
-- `vite`: Build tool
-- `typescript`: Type safety
-- `tailwindcss@3.4`: Styling (v3.4 for PostCSS compatibility)
-- `postcss`, `autoprefixer`: CSS processing
-- `lucide-react`: Icons
-- `clsx`, `tailwind-merge`: Utility functions
 
 ### Backend (Pending)
 - Firebase SDK packages (to be added)

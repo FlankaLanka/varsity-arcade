@@ -325,25 +325,25 @@ function ActivitySection({ activities }: { activities: ActivityEntry[] }) {
               <p className="text-xs font-['Press_Start_2P'] text-indigo-200 mb-3">{date}</p>
               <div className="space-y-3">
                 {items.map(activity => (
-                  <div key={activity.id} className="relative pl-6">
-                    <div className="absolute left-0 top-3 w-3 h-3 rounded-full bg-indigo-400 border-2 border-gray-900" />
-                    <div className="border border-gray-800 rounded-lg p-4 bg-gray-950/70">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span>{activity.icon ?? '✨'}</span>
-                          <p className="text-sm text-white">{activity.description}</p>
-                        </div>
-                        <span className="text-xs text-gray-500">{activity.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                      {activity.meta && (
-                        <div className="mt-2 text-xs text-gray-400 flex flex-wrap gap-3">
-                          {Object.entries(activity.meta).map(([key, value]) => (
-                            <span key={key} className="uppercase tracking-wide">
-                              {key}: {value}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+            <div key={activity.id} className="relative pl-6">
+              <div className="absolute left-0 top-3 w-3 h-3 rounded-full bg-indigo-400 border-2 border-gray-900" />
+              <div className="border border-gray-800 rounded-lg p-4 bg-gray-950/70">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span>{activity.icon ?? '✨'}</span>
+                    <p className="text-sm text-white">{activity.description}</p>
+                  </div>
+                  <span className="text-xs text-gray-500">{activity.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                {activity.meta && (
+                  <div className="mt-2 text-xs text-gray-400 flex flex-wrap gap-3">
+                    {Object.entries(activity.meta).map(([key, value]) => (
+                      <span key={key} className="uppercase tracking-wide">
+                        {key}: {value}
+                      </span>
+                    ))}
+                  </div>
+                )}
                     </div>
                   </div>
                 ))}

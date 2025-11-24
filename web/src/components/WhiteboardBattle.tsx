@@ -1,8 +1,9 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { ref, onValue, set, push, remove, update, serverTimestamp } from 'firebase/database';
+import { useRef, useEffect, useState } from 'react';
+import { ref, onValue, set, remove, update } from 'firebase/database';
 import { rtdb } from '../lib/firebase';
 import type { WhiteboardDrawing, CohortMember } from '../types/cohort';
 import { circleIntersectsSegment, getPathCenter, type Point } from '../utils/geometry';
+import { X } from 'lucide-react';
 
 interface WhiteboardBattleProps {
   drawings: WhiteboardDrawing[];
@@ -61,7 +62,7 @@ export default function WhiteboardBattle({
   cohortId
 }: WhiteboardBattleProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const requestRef = useRef<number>();
+  const requestRef = useRef<number | null>(null);
   const keysRef = useRef<{ [key: string]: boolean }>({});
   const mouseRef = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
   const mouseDownRef = useRef(false);
@@ -71,6 +72,11 @@ export default function WhiteboardBattle({
   const [gameWon, setGameWon] = useState(false);
   const [enemiesCount, setEnemiesCount] = useState(0);
   const [isHost, setIsHost] = useState(false); // Host handles enemy logic
+  const [gameInitialized, setGameInitialized] = useState(false); // Track if game has been initialized
+  
+  // Camera state (follows current player)
+  const cameraX = useRef(0);
+  const cameraY = useRef(0);
   
   // Refs for mutable game state
   const gameStateRef = useRef({
@@ -79,6 +85,18 @@ export default function WhiteboardBattle({
     projectiles: [] as Projectile[],
     lastShotTime: 0,
   });
+
+  // Projectile sync throttling (so other clients see bullets move)
+  const lastProjectileSyncRef = useRef(0);
+  const PROJECTILE_SYNC_INTERVAL = 100; // ms
+
+  // Enemy sync throttling + snapshot tracking
+  const lastEnemySyncRef = useRef(0);
+  const ENEMY_SYNC_INTERVAL = 120; // ms (~8 FPS sync to RTDB)
+  const enemySnapshotReadyRef = useRef(false);
+
+  // Prevent duplicate victory announcements
+  const victoryAnnouncedRef = useRef(false);
 
   // Preload avatars
   useEffect(() => {
@@ -92,83 +110,148 @@ export default function WhiteboardBattle({
 
   // Setup RTDB Sync
   useEffect(() => {
-    if (!cohortId) return; // Local mode fallback handled in init
+    if (!cohortId) {
+      setIsHost(true);
+      enemySnapshotReadyRef.current = true;
+      setGameInitialized(true);
+      return;
+    }
 
-    // 1. Determine Host (Simplistic: First member in list or owner is host logic)
-    // For now, let's say whoever initializes the battle state first or just the first member ID
-    // A better way: use a 'host' field in RTDB or Firestore
+    enemySnapshotReadyRef.current = false;
+
+    // Determine Host (currently first member alphabetically)
     const sortedMembers = [...members].sort((a, b) => a.userId.localeCompare(b.userId));
     const hostId = sortedMembers[0]?.userId;
     const amIHost = currentUserId === hostId;
     setIsHost(amIHost);
 
-    // 2. Listen for Game State Updates
-    const gameRef = ref(rtdb, `cohorts/${cohortId}/battle`);
-    
-    // Player Updates
-    const unsubscribePlayers = onValue(ref(rtdb, `cohorts/${cohortId}/battle/players`), (snapshot) => {
+    const playersRef = ref(rtdb, `cohorts/${cohortId}/battle/players`);
+    const unsubscribePlayers = onValue(playersRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      const remotePlayers = Object.values(data) as Player[];
+      gameStateRef.current.players.forEach((localP) => {
+        const remoteP = remotePlayers.find((rp) => rp.id === localP.id);
+        if (!remoteP) return;
+
+        if (localP.id !== currentUserId) {
+          localP.x = remoteP.x;
+          localP.y = remoteP.y;
+        }
+        localP.health = remoteP.health;
+        localP.isAlive = remoteP.isAlive;
+      });
+
+      remotePlayers.forEach((rp) => {
+        if (!gameStateRef.current.players.find((p) => p.id === rp.id)) {
+          let avatarImg: HTMLImageElement | undefined;
+          if (rp.avatarUrl) {
+            avatarImg = new Image();
+            avatarImg.src = rp.avatarUrl;
+          }
+          gameStateRef.current.players.push({ ...rp, avatarImg });
+        }
+      });
+    });
+
+    const enemiesRef = ref(rtdb, `cohorts/${cohortId}/battle/enemies`);
+    const unsubscribeEnemies = onValue(enemiesRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        const remotePlayers = Object.values(data) as Player[];
-        // Merge remote state into local ref, but preserve local player's predicted position to avoid jitter
-        // Actually, for a simple implementation, just updating the Ref is fine,
-        // but the game loop will overwrite local player pos based on inputs.
-        
-        gameStateRef.current.players.forEach(localP => {
-          const remoteP = remotePlayers.find(rp => rp.id === localP.id);
-          if (remoteP) {
-            if (localP.id !== currentUserId) {
-              // Update other players fully
-              localP.x = remoteP.x;
-              localP.y = remoteP.y;
-              localP.health = remoteP.health;
-              localP.isAlive = remoteP.isAlive;
-            } else {
-                // Only sync health/alive status for self from server (if server/host dictates damage)
-                // But here, clients claim damage on themselves or host claims it?
-                // Let's stick to: Clients authorize their own movement, Host calculates enemy hits on players
-                localP.health = remoteP.health;
-                localP.isAlive = remoteP.isAlive;
-            }
-          }
-        });
-        
-        // Add new players if they joined late
-        remotePlayers.forEach(rp => {
-            if (!gameStateRef.current.players.find(p => p.id === rp.id)) {
-                // Hydrate image
-                let avatarImg: HTMLImageElement | undefined;
-                if (rp.avatarUrl) {
-                    avatarImg = new Image();
-                    avatarImg.src = rp.avatarUrl;
-                }
-                gameStateRef.current.players.push({ ...rp, avatarImg });
-            }
-        });
+        enemySnapshotReadyRef.current = true;
+        const loadedEnemies = Object.values(data) as Enemy[];
+        gameStateRef.current.enemies = loadedEnemies.map((enemy) => ({
+          ...enemy,
+          path: enemy.path ?? [],
+          originalPath: enemy.originalPath ?? [],
+        }));
+        setEnemiesCount(loadedEnemies.length);
+      } else if (enemySnapshotReadyRef.current) {
+        gameStateRef.current.enemies = [];
+        setEnemiesCount(0);
+      }
+      setGameInitialized(true);
+    });
+
+    const battleGameStateRef = ref(rtdb, `cohorts/${cohortId}/battle/gameState`);
+    const unsubscribeGameState = onValue(battleGameStateRef, (snapshot) => {
+      const battleGameState = snapshot.val();
+      if (!battleGameState) return;
+      if (battleGameState.gameOver !== undefined) {
+        setGameOver(battleGameState.gameOver);
+        if (battleGameState.gameOver) {
+          victoryAnnouncedRef.current = true;
+        }
+      }
+      if (battleGameState.gameWon !== undefined) {
+        setGameWon(battleGameState.gameWon);
+        if (battleGameState.gameWon) {
+          victoryAnnouncedRef.current = true;
+        }
       }
     });
 
-    // Enemy Updates (Only Non-Hosts listen, Hosts write)
-    if (!amIHost) {
-        const unsubscribeEnemies = onValue(ref(rtdb, `cohorts/${cohortId}/battle/enemies`), (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                // Full replace for enemies to keep sync simple
-                const loadedEnemies = Object.values(data) as Enemy[];
-                // We need to preserve path/originalPath structure if lost in serialization?
-                // RTDB stores arrays as objects with numeric keys sometimes.
-                gameStateRef.current.enemies = loadedEnemies;
-                setEnemiesCount(loadedEnemies.length);
-            }
-        });
-        return () => {
-            unsubscribePlayers();
-            unsubscribeEnemies();
-        }
-    }
+    const projectilesRef = ref(rtdb, `cohorts/${cohortId}/battle/projectiles`);
+    const unsubscribeProjectiles = onValue(projectilesRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const remoteProjectiles = Object.entries(data).map(([id, proj]: [string, any]) => ({
+          id,
+          x: proj.x,
+          y: proj.y,
+          vx: proj.vx,
+          vy: proj.vy,
+          radius: proj.radius || 4,
+          color: proj.color || '#FF0055',
+          ownerId: proj.ownerId,
+        })) as Projectile[];
 
-    return () => unsubscribePlayers();
+        const ourProjectileIds = new Set(
+          gameStateRef.current.projectiles.filter((p) => p.ownerId === currentUserId).map((p) => p.id)
+        );
+
+        gameStateRef.current.projectiles = gameStateRef.current.projectiles.filter((p) => {
+          if (p.ownerId === currentUserId && ourProjectileIds.has(p.id)) {
+            return true;
+          }
+          return remoteProjectiles.some((rp) => rp.id === p.id);
+        });
+
+        remoteProjectiles.forEach((rp) => {
+          if (rp.ownerId !== currentUserId && !gameStateRef.current.projectiles.find((p) => p.id === rp.id)) {
+            gameStateRef.current.projectiles.push(rp);
+          }
+        });
+      } else {
+        gameStateRef.current.projectiles = gameStateRef.current.projectiles.filter(
+          (p) => p.ownerId === currentUserId
+        );
+      }
+    });
+
+    return () => {
+      unsubscribePlayers();
+      unsubscribeEnemies();
+      unsubscribeGameState();
+      unsubscribeProjectiles();
+    };
   }, [cohortId, currentUserId, members]);
+
+  // Fallback victory detection: if enemies list is empty but host never broadcasted
+  useEffect(() => {
+    if (!cohortId) return;
+    if (!enemySnapshotReadyRef.current) return;
+    if (!gameInitialized || gameOver || gameWon) return;
+    if (enemiesCount > 0 || victoryAnnouncedRef.current) return;
+
+    victoryAnnouncedRef.current = true;
+    setGameWon(true);
+    set(ref(rtdb, `cohorts/${cohortId}/battle/gameState`), {
+      gameOver: false,
+      gameWon: true,
+    }).catch(() => {});
+  }, [cohortId, enemiesCount, gameInitialized, gameOver, gameWon]);
 
 
   // Initialize Game (Local or Host init)
@@ -213,31 +296,40 @@ export default function WhiteboardBattle({
     // We should check if battle state already exists to avoid reset on refresh.
     
     gameStateRef.current.players = initialPlayers;
+    victoryAnnouncedRef.current = false;
+    enemySnapshotReadyRef.current = false;
+    
+    // Initialize camera to center on current player
+    const currentPlayer = initialPlayers.find(p => p.id === currentUserId);
+    if (currentPlayer && canvasRef.current) {
+      cameraX.current = currentPlayer.x - canvasRef.current.width / 2;
+      cameraY.current = currentPlayer.y - canvasRef.current.height / 2;
+    }
     
     // Host initializes enemies
     if (isHost || !cohortId) {
-        const initialEnemies: Enemy[] = [];
-        drawings.forEach((drawing, index) => {
-            if (drawing.path.length < 2) return;
-            const center = getPathCenter(drawing.path);
+    const initialEnemies: Enemy[] = [];
+    drawings.forEach((drawing, index) => {
+      if (drawing.path.length < 2) return;
+      const center = getPathCenter(drawing.path);
             const relativePath = drawing.path.map(p => ({ x: p.x - center.x, y: p.y - center.y }));
 
-            initialEnemies.push({
-                id: `enemy-${index}`,
+      initialEnemies.push({
+        id: `enemy-${index}`,
                 path: drawing.path.map(p => ({ ...p })),
-                originalPath: relativePath,
-                center: { ...center },
-                color: drawing.color,
-                speed: 0.5 + Math.random() * 0.5,
+        originalPath: relativePath,
+        center: { ...center },
+        color: drawing.color,
+        speed: 0.5 + Math.random() * 0.5,
                 scale: 1.0,
-                maxScale: 2.0 + Math.random() * 0.5,
-                growthRate: 0.002 + Math.random() * 0.002,
-                health: 1
-            });
-        });
-        
-        gameStateRef.current.enemies = initialEnemies;
-        setEnemiesCount(initialEnemies.length);
+        maxScale: 2.0 + Math.random() * 0.5,
+        growthRate: 0.002 + Math.random() * 0.002,
+        health: 1
+      });
+    });
+    
+    gameStateRef.current.enemies = initialEnemies;
+    setEnemiesCount(initialEnemies.length);
 
         // Initial Sync Push
         if (cohortId && isHost) {
@@ -261,12 +353,31 @@ export default function WhiteboardBattle({
 
     setGameOver(false);
     setGameWon(false);
+    setGameInitialized(false);
+    
+    // Reset game state in RTDB when game restarts
+    if (cohortId) {
+      set(ref(rtdb, `cohorts/${cohortId}/battle/gameState`), {
+        gameOver: false,
+        gameWon: false
+      }).catch(() => {});
+      
+      // Clear any leftover projectiles from previous sessions (host only to avoid race conditions)
+      if (isHost) {
+        remove(ref(rtdb, `cohorts/${cohortId}/battle/projectiles`)).catch(() => {});
+      }
+    }
+    
+    // Clear local projectile state
+    gameStateRef.current.projectiles = [];
 
     // Start Loop
     requestRef.current = requestAnimationFrame(gameLoop);
 
     return () => {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      if (requestRef.current !== null) {
+        cancelAnimationFrame(requestRef.current);
+      }
     };
   }, [drawings, members, currentUserId, isHost, cohortId]);
 
@@ -296,11 +407,11 @@ export default function WhiteboardBattle({
     if (!canvas) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      mouseRef.current = {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
-      };
+        const rect = canvas.getBoundingClientRect();
+        mouseRef.current = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
     };
 
     const handleMouseDown = () => {
@@ -359,40 +470,62 @@ export default function WhiteboardBattle({
       if (!player.isAlive) return;
 
       if (player.id === currentUserId) {
-        if (keysRef.current['KeyW'] || keysRef.current['ArrowUp']) player.y = Math.max(player.radius, player.y - player.speed);
-        if (keysRef.current['KeyS'] || keysRef.current['ArrowDown']) player.y = Math.min(height - player.radius, player.y + player.speed);
-        if (keysRef.current['KeyA'] || keysRef.current['ArrowLeft']) player.x = Math.max(player.radius, player.x - player.speed);
-        if (keysRef.current['KeyD'] || keysRef.current['ArrowRight']) player.x = Math.min(width - player.radius, player.x + player.speed);
-      
+        // Infinite canvas - no boundaries
+        if (keysRef.current['KeyW'] || keysRef.current['ArrowUp']) player.y -= player.speed;
+        if (keysRef.current['KeyS'] || keysRef.current['ArrowDown']) player.y += player.speed;
+        if (keysRef.current['KeyA'] || keysRef.current['ArrowLeft']) player.x -= player.speed;
+        if (keysRef.current['KeyD'] || keysRef.current['ArrowRight']) player.x += player.speed;
+        
+        // Update camera to follow player (centered on canvas)
+        cameraX.current = player.x - width / 2;
+        cameraY.current = player.y - height / 2;
+
         // Shooting
-        if (mouseDownRef.current) {
+      if (mouseDownRef.current) {
           if (time - state.lastShotTime > 200) {
-            const dx = mouseRef.current.x - player.x;
-            const dy = mouseRef.current.y - player.y;
-            const mag = Math.sqrt(dx*dx + dy*dy);
-            const projectileSpeed = 10;
-            const vx = mag > 0 ? (dx / mag) * projectileSpeed : 0;
+            // Convert mouse screen coordinates to world coordinates
+            const worldMouseX = mouseRef.current.x + cameraX.current;
+            const worldMouseY = mouseRef.current.y + cameraY.current;
+            const dx = worldMouseX - player.x;
+            const dy = worldMouseY - player.y;
+          const mag = Math.sqrt(dx*dx + dy*dy);
+          const projectileSpeed = 10;
+          const vx = mag > 0 ? (dx / mag) * projectileSpeed : 0;
             const vy = mag > 0 ? (dy / mag) * projectileSpeed : -projectileSpeed;
 
-            const projectile: Projectile = {
-              id: `proj-${time}-${currentUserId}`,
+          const projectileId = `proj-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${currentUserId}`;
+          const projectile: Projectile = {
+              id: projectileId,
               x: player.x,
               y: player.y,
-              vx,
-              vy,
-              radius: 4,
+            vx,
+            vy,
+            radius: 4,
               color: '#FF0055',
               ownerId: player.id
-            };
+          };
+          
+          state.projectiles.push(projectile);
+          state.lastShotTime = time;
             
-            state.projectiles.push(projectile);
-            state.lastShotTime = time;
-            
-            // TODO: Sync projectiles? For now, local only for responsiveness, 
-            // but hits need validation.
-          }
+            // Sync bullet to RTDB (initial position and direction)
+            if (cohortId) {
+              const bulletData = {
+                x: player.x,
+                y: player.y,
+                vx,
+                vy,
+                radius: 4,
+                color: '#FF0055',
+                ownerId: player.id,
+                createdAt: Date.now()
+              };
+              set(ref(rtdb, `cohorts/${cohortId}/battle/projectiles/${projectileId}`), bulletData)
+                .catch((err) => console.error("Failed to sync bullet:", err));
+            }
         }
-      } 
+      }
+    }
       // Remote players are updated via the useEffect hook
     });
 
@@ -401,131 +534,184 @@ export default function WhiteboardBattle({
       p.x += p.vx;
       p.y += p.vy;
     });
-    state.projectiles = state.projectiles.filter(p => 
-      p.x > 0 && p.x < width && p.y > 0 && p.y < height
-    );
+
+    if (cohortId && time - lastProjectileSyncRef.current >= PROJECTILE_SYNC_INTERVAL) {
+      const ourProjectiles = state.projectiles.filter((p) => p.ownerId === currentUserId);
+      const updates: Record<string, any> = {};
+      ourProjectiles.forEach((p) => {
+        updates[`cohorts/${cohortId}/battle/projectiles/${p.id}`] = {
+          x: p.x,
+          y: p.y,
+          vx: p.vx,
+          vy: p.vy,
+          radius: p.radius,
+          color: p.color,
+          ownerId: p.ownerId,
+          updatedAt: Date.now(),
+        };
+      });
+      if (Object.keys(updates).length > 0) {
+        update(ref(rtdb), updates).catch((err) => console.error('Failed to sync projectile positions:', err));
+      }
+      lastProjectileSyncRef.current = time;
+    }
+
+    // Remove only our own projectiles that travel too far (Firebase cleanup handles others)
+    const maxDistance = Math.max(width, height) * 2;
+    const currentPlayer = state.players.find(p => p.id === currentUserId);
+    if (currentPlayer) {
+      state.projectiles = state.projectiles.filter(p => {
+        if (p.ownerId !== currentUserId) {
+          return true;
+        }
+        const dx = p.x - currentPlayer.x;
+        const dy = p.y - currentPlayer.y;
+        const withinRange = Math.sqrt(dx * dx + dy * dy) < maxDistance;
+        if (!withinRange && cohortId) {
+          remove(ref(rtdb, `cohorts/${cohortId}/battle/projectiles/${p.id}`)).catch(() => {});
+        }
+        return withinRange;
+      });
+    }
 
     // 3. Update Enemies (Host Only Logic)
     if (isHost || !cohortId) {
-        state.enemies.forEach(enemy => {
-        // Target nearest living player
+      state.enemies.forEach(enemy => {
         let nearestPlayer: Player | null = null;
         let minDist = Infinity;
 
         state.players.forEach(player => {
-            if (!player.isAlive) return;
-            const dx = player.x - enemy.center.x;
-            const dy = player.y - enemy.center.y;
-            const dist = dx*dx + dy*dy;
-            if (dist < minDist) {
+          if (!player.isAlive) return;
+          const dx = player.x - enemy.center.x;
+          const dy = player.y - enemy.center.y;
+          const dist = dx * dx + dy * dy;
+          if (dist < minDist) {
             minDist = dist;
             nearestPlayer = player;
-            }
+          }
         });
 
         if (nearestPlayer) {
-            const dx = nearestPlayer.x - enemy.center.x;
-            const dy = nearestPlayer.y - enemy.center.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist > 0) {
+          const targetPlayer = nearestPlayer as Player;
+          const dx = targetPlayer.x - enemy.center.x;
+          const dy = targetPlayer.y - enemy.center.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > 0) {
             enemy.center.x += (dx / dist) * enemy.speed;
             enemy.center.y += (dy / dist) * enemy.speed;
-            }
+          }
 
-            enemy.path = enemy.originalPath.map(p => ({
+          enemy.path = enemy.originalPath.map(p => ({
             x: enemy.center.x + p.x * enemy.scale,
             y: enemy.center.y + p.y * enemy.scale
-            }));
+          }));
 
-            // Collision
-            let hit = false;
-            if (dist < 100) {
-                for (let i = 0; i < enemy.path.length - 1; i++) {
-                    if (circleIntersectsSegment(
-                        { x: nearestPlayer.x, y: nearestPlayer.y }, 
-                        nearestPlayer.radius, 
-                        enemy.path[i], 
-                        enemy.path[i+1]
-                    )) {
-                        hit = true;
-                        break;
-                    }
-                }
+          let hit = false;
+          if (dist < 100) {
+            for (let i = 0; i < enemy.path.length - 1; i++) {
+              if (circleIntersectsSegment(
+                { x: targetPlayer.x, y: targetPlayer.y },
+                targetPlayer.radius,
+                enemy.path[i],
+                enemy.path[i + 1]
+              )) {
+                hit = true;
+                break;
+              }
             }
+          }
 
-            if (hit) {
-                nearestPlayer.health -= 0.5;
-                if (nearestPlayer.health <= 0) {
-                    nearestPlayer.health = 0;
-                    nearestPlayer.isAlive = false;
-                }
-                healthChanged = true;
-                
-                // Host syncs health damage
-                if (cohortId) {
-                    const { avatarImg, ...pData } = nearestPlayer;
-                    // Filter out undefined values (Firebase RTDB doesn't allow undefined)
-                    const cleanPlayerData: any = {};
-                    Object.entries(pData).forEach(([key, value]) => {
-                        if (value !== undefined) {
-                            cleanPlayerData[key] = value;
-                        }
-                    });
-                    update(ref(rtdb, `cohorts/${cohortId}/battle/players/${nearestPlayer.id}`), cleanPlayerData);
-                }
+          if (hit) {
+            targetPlayer.health -= 0.5;
+            if (targetPlayer.health <= 0) {
+              targetPlayer.health = 0;
+              targetPlayer.isAlive = false;
             }
+            healthChanged = true;
+
+            if (cohortId && isHost) {
+              const { avatarImg, ...pData } = targetPlayer;
+              const cleanPlayerData: any = {};
+              Object.entries(pData).forEach(([key, value]) => {
+                if (value !== undefined) {
+                  cleanPlayerData[key] = value;
+                }
+              });
+              update(ref(rtdb, `cohorts/${cohortId}/battle/players/${targetPlayer.id}`), cleanPlayerData);
+            }
+          }
         }
-        });
-        
-        // Host syncs enemy positions periodically? 
-        // Doing it every frame is expensive. 
-        // For now, we rely on deterministic update if everyone runs the same logic, 
-        // but latency makes them diverge.
-        // Let's sync enemies every 100ms if host
-        if (cohortId && time % 6 < 1) { // Rough throttle
-             const updates: any = {};
-             state.enemies.forEach(e => updates[`cohorts/${cohortId}/battle/enemies/${e.id}`] = e);
-             update(ref(rtdb), updates);
+      });
+
+      if (cohortId && isHost && time - lastEnemySyncRef.current >= ENEMY_SYNC_INTERVAL) {
+        if (state.enemies.length === 0) {
+          set(ref(rtdb, `cohorts/${cohortId}/battle/enemies`), null).catch((err) =>
+            console.error('Failed to sync empty enemy state:', err)
+          );
+        } else {
+          const enemyPayload: Record<string, Enemy> = {};
+          state.enemies.forEach((enemy) => {
+            enemyPayload[enemy.id] = {
+              ...enemy,
+              path: enemy.path.map((p) => ({ ...p })),
+              originalPath: enemy.originalPath.map((p) => ({ ...p })),
+            };
+          });
+          set(ref(rtdb, `cohorts/${cohortId}/battle/enemies`), enemyPayload).catch((err) =>
+            console.error('Failed to sync enemies:', err)
+          );
         }
+        lastEnemySyncRef.current = time;
+      }
+
+      setEnemiesCount(state.enemies.length);
     }
 
-    // 4. Collision: Projectiles vs Enemies
-    // ... (Same logic, but host authoritative for removing enemies?)
-    // For responsiveness, clients predict, Host confirms. 
-    // Simplification: Local hit detection destroys enemy locally.
-    // If Host detects hit, it removes from DB.
-    
-    for (let pIdx = state.projectiles.length - 1; pIdx >= 0; pIdx--) {
+    // 4. Collision: Projectiles vs Enemies (host authoritative)
+    if (isHost || !cohortId) {
+      for (let pIdx = state.projectiles.length - 1; pIdx >= 0; pIdx--) {
         const p = state.projectiles[pIdx];
         let projectileHit = false;
 
         for (let eIdx = state.enemies.length - 1; eIdx >= 0; eIdx--) {
-            const enemy = state.enemies[eIdx];
-            const dx = p.x - enemy.center.x;
-            const dy = p.y - enemy.center.y;
-            if (dx*dx + dy*dy > 10000) continue;
+          const enemy = state.enemies[eIdx];
+          const dx = p.x - enemy.center.x;
+          const dy = p.y - enemy.center.y;
+          if (dx * dx + dy * dy > 10000) continue;
 
-            let hit = false;
-            for (let i = 0; i < enemy.path.length - 1; i++) {
-                if (circleIntersectsSegment({ x: p.x, y: p.y }, p.radius + 5, enemy.path[i], enemy.path[i+1])) {
-                    hit = true;
-                    break;
-                }
+          let hit = false;
+          for (let i = 0; i < enemy.path.length - 1; i++) {
+            if (circleIntersectsSegment({ x: p.x, y: p.y }, p.radius + 5, enemy.path[i], enemy.path[i + 1])) {
+              hit = true;
+              break;
+            }
+          }
+
+          if (hit) {
+            state.enemies.splice(eIdx, 1);
+            projectileHit = true;
+
+            const newCount = state.enemies.length;
+            setEnemiesCount(newCount);
+
+            if (isHost && cohortId) {
+              remove(ref(rtdb, `cohorts/${cohortId}/battle/enemies/${enemy.id}`)).catch((err) => {
+                console.error('Failed to remove enemy from RTDB:', err);
+              });
             }
 
-            if (hit) {
-                state.enemies.splice(eIdx, 1);
-                projectileHit = true;
-                setEnemiesCount(state.enemies.length);
-                
-                if (isHost && cohortId) {
-                    remove(ref(rtdb, `cohorts/${cohortId}/battle/enemies/${enemy.id}`));
-                }
-                
-                break;
-            }
+            break;
+          }
         }
-        if (projectileHit) state.projectiles.splice(pIdx, 1);
+        if (projectileHit) {
+          const removedProjectile = state.projectiles[pIdx];
+          state.projectiles.splice(pIdx, 1);
+
+          if (cohortId && removedProjectile) {
+            remove(ref(rtdb, `cohorts/${cohortId}/battle/projectiles/${removedProjectile.id}`)).catch(() => {});
+          }
+        }
+      }
     }
 
     // 5. Check Game State
@@ -535,22 +721,72 @@ export default function WhiteboardBattle({
       onHealthUpdate?.(healths);
     }
 
-    const activePlayers = state.players.filter(p => p.isAlive);
-    if (activePlayers.length === 0 && !gameOver) {
-      setGameOver(true);
-    }
-    if (state.enemies.length === 0 && !gameWon && !gameOver) {
-      setGameWon(true);
+    // Only host determines victory/defeat and syncs to RTDB
+    // Other clients listen to this state via RTDB listener
+    // Run this check every frame when host and initialized
+    if (isHost && gameInitialized && !gameOver && !gameWon) {
+      const activePlayers = state.players.filter(p => p.isAlive);
+      
+      // Check defeat first
+      if (activePlayers.length === 0) {
+        setGameOver(true);
+        // Sync to RTDB
+        if (cohortId) {
+          set(ref(rtdb, `cohorts/${cohortId}/battle/gameState`), {
+            gameOver: true,
+            gameWon: false
+          }).catch(() => {});
+        }
+        return; // Stop game loop
+      }
+      
+      // Check victory - use state.enemies.length directly and ensure it's accurate
+      // Also update enemiesCount to match
+      const currentEnemyCount = state.enemies.length;
+      setEnemiesCount(currentEnemyCount); // Keep UI in sync with actual enemy count
+      
+      if (currentEnemyCount === 0 && !victoryAnnouncedRef.current) {
+        victoryAnnouncedRef.current = true;
+        setGameWon(true);
+        // Sync to RTDB
+        if (cohortId) {
+          set(ref(rtdb, `cohorts/${cohortId}/battle/gameState`), {
+            gameOver: false,
+            gameWon: true
+          }).catch(() => {});
+        }
+        return; // Stop game loop
+      }
     }
 
     // 6. Render
     ctx.clearRect(0, 0, width, height);
 
-    // Grid
+    // Apply camera transform
+    ctx.save();
+    ctx.translate(-cameraX.current, -cameraY.current);
+
+    // Infinite Grid
     ctx.strokeStyle = '#111827';
     ctx.lineWidth = 1;
-    for(let x = 0; x < width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke(); }
-    for(let y = 0; y < height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
+    const gridSize = 40;
+    const startX = Math.floor(cameraX.current / gridSize) * gridSize;
+    const endX = startX + width + gridSize;
+    const startY = Math.floor(cameraY.current / gridSize) * gridSize;
+    const endY = startY + height + gridSize;
+    
+    for(let x = startX; x <= endX; x += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, startY);
+      ctx.lineTo(x, endY);
+      ctx.stroke();
+    }
+    for(let y = startY; y <= endY; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(startX, y);
+      ctx.lineTo(endX, y);
+      ctx.stroke();
+    }
 
     // Enemies
     state.enemies.forEach(enemy => {
@@ -591,7 +827,7 @@ export default function WhiteboardBattle({
         catch (e) { ctx.fillStyle = player.color; ctx.fill(); }
       } else {
         ctx.fillStyle = player.color;
-        ctx.fill();
+      ctx.fill();
       }
       ctx.restore();
 
@@ -612,12 +848,15 @@ export default function WhiteboardBattle({
 
       // Aim Line (Self)
       if (isCurrentUser) {
-        ctx.beginPath();
+        // Convert mouse screen coordinates to world coordinates
+        const worldMouseX = mouseRef.current.x + cameraX.current;
+        const worldMouseY = mouseRef.current.y + cameraY.current;
+      ctx.beginPath();
         ctx.moveTo(player.x, player.y);
-        ctx.lineTo(mouseRef.current.x, mouseRef.current.y);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        ctx.lineTo(worldMouseX, worldMouseY);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
       }
 
       // HP Bar
@@ -628,6 +867,9 @@ export default function WhiteboardBattle({
       ctx.fillStyle = '#00FF00';
       ctx.fillRect(player.x - hpBarWidth/2, hpBarY, hpBarWidth * (player.health / 100), 4);
     });
+    
+    // Restore camera transform
+    ctx.restore();
 
     if (!gameOver && !gameWon) {
       requestRef.current = requestAnimationFrame(gameLoop);
@@ -640,11 +882,26 @@ export default function WhiteboardBattle({
       
       {/* UI Overlay */}
       {!gameOver && !gameWon && (
-        <div className="absolute top-4 left-4 text-neon-cyan font-['Press_Start_2P'] z-50 pointer-events-none">
-          <div className="text-xs text-gray-400 mt-2">ENEMIES LEFT: {enemiesCount}</div>
+      <div className="absolute top-4 left-4 text-neon-cyan font-['Press_Start_2P'] z-50 pointer-events-none">
+        <div className="text-xs text-gray-400 mt-2">ENEMIES LEFT: {enemiesCount}</div>
           <div className="text-xs text-gray-500 mt-1">PLAYERS ALIVE: {gameStateRef.current.players.filter(p => p.isAlive).length}</div>
-        </div>
+      </div>
       )}
+
+      {/* Manual Exit Button */}
+      <div className="absolute bottom-4 right-4 z-50">
+        <button
+          onClick={() => {
+            if (window.confirm('Exit the battle and return everyone to the whiteboard?')) {
+              onBattleEnd();
+            }
+          }}
+          className="w-12 h-12 bg-gray-800/90 hover:bg-gray-700 border border-gray-600 text-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110"
+          title="Exit Battle"
+        >
+          <X size={22} />
+        </button>
+      </div>
 
       {/* End Screens */}
       {(gameOver || gameWon) && (

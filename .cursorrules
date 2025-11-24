@@ -5,6 +5,14 @@
 - Update the Memory Bank and this file immediately after learning new patterns or preferences.
 - Prefer absolute paths in tool commands.
 
-## Observations (2025-11-23)
-- Repository currently contains only documentation scaffolding; implementation details are TBD.
+## Observations (2025-11-24)
+- All multiplayer state (whiteboard and battle) uses Firebase Realtime Database.
+- Battle system uses host-based architecture: first member (by sorted user ID) acts as authoritative host.
 - Keep instructions from the user visible so resets still follow the Memory Bank workflow.
+
+## Battle System Patterns
+- **Projectile IDs**: Must be Firebase-safe (no `.`, `#`, `$`, `[`, `]`). Use `proj-{Date.now()}-{random}-{userId}`.
+- **Projectile Ownership**: Each client only writes/updates their own projectiles; only remove your own projectiles from Firebase when they go out of range.
+- **Session Init**: Host must clear `battle/projectiles` on new battle to prevent stale bullets.
+- **Victory Detection**: Host writes to `battle/gameState`; add fallback `useEffect` watching `enemiesCount === 0` for reliability.
+- **Auto-Reset**: When presence count hits 0, reset `gameState.mode` to `'whiteboard'`.

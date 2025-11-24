@@ -1,5 +1,19 @@
 # Progress Log
 
+## 2025-11-24 (Session 2)
+- **Projectile Sync Fix**: Fixed bug where clicking to shoot would make all characters fire. Now only the local player's character shoots; each client writes their own projectiles to Firebase.
+- **Firebase-Safe Projectile IDs**: Changed from `proj-{time}-{userId}` (time had decimals) to `proj-{Date.now()}-{random}-{userId}` to avoid invalid Firebase path characters.
+- **Stale Projectiles Fix**: Host now clears `battle/projectiles` from RTDB when a new battle starts, preventing ghost bullets from previous sessions.
+- **Exit Battle Button**: Added "X" button (bottom-right, same position as whiteboard checkmark) to manually end the battle for all users.
+- **Auto-Reset on Empty Cohort**: When all users leave a cohort room, the presence listener resets `gameState` to whiteboard mode automatically.
+- **Victory Detection Improvements**: Added `victoryAnnouncedRef` to prevent duplicate victory broadcasts; fallback `useEffect` watches `enemiesCount` and posts victory if host misses it.
+- **Enemy Sync Throttling**: Host syncs enemy positions at ~8 FPS (120ms interval) using `set()` for full replacement to ensure consistency.
+
+## 2025-11-24 (Session 1)
+- Reverted Colyseus migration and restored Firebase Realtime Database for all battle gameplay.
+- Battle system now uses host-based architecture: one client runs authoritative simulation, all clients sync via Firebase RTDB.
+- Removed all Colyseus dependencies and server code.
+
 ## 2025-11-23
 - Initialized the Memory Bank directory and core context files.
 - Recorded current unknowns and next steps for defining the AI tutor product.

@@ -1,9 +1,9 @@
 # System Patterns
 
 ## Architectural Overview
-- **Monorepo Structure**: `/web` for frontend, `/functions` for backend (Firebase Functions)
+- **Monorepo Structure**: `/web` for frontend, `/functions` for backend (Firebase Functions), `/server` (planned) for Colyseus battle server
 - **Frontend**: React + TypeScript + Vite, Tailwind CSS for styling
-- **Backend**: Firebase (Auth, Firestore, Realtime DB, Functions, Storage)
+- **Backend**: Firebase (Auth, Firestore, Realtime DB, Functions, Storage) + Colyseus server for Whiteboard Battle (in progress)
 - **Game Rendering**: Canvas API with `requestAnimationFrame` game loops
 - **Routing**: React Router for navigation between hub, games, results, leaderboards, profile, and friend profiles
 
@@ -79,6 +79,26 @@ const loop = (currentTime: number) => {
 - **State Isolation**: Game state in refs, UI state in React state
 - **Responsive Design**: Games scale to container size
 - **Cooperative Defense**: Battle minigame emphasizes teamwork and creativity (drawings become content)
+
+### Multiplayer Whiteboard Battle (Firebase RTDB)
+- **Host-Based Architecture**: One client acts as the "host" (first member in sorted user ID list) and runs the authoritative game simulation. The host handles enemy AI, collisions, and win/loss conditions, syncing results to Firebase RTDB.
+- **Firebase RTDB Structure**: All battle state lives in `cohorts/{cohortId}/battle/`:
+  - `players/{userId}`: Player positions, health, alive status (updated by each client for their own player, host syncs damage)
+  - `enemies/{enemyId}`: Enemy positions, paths, scale (host writes via `set()` for full replacement at ~8 FPS)
+  - `projectiles/{projectileId}`: Projectile positions and velocities (clients write their own at 10Hz, remove their own when out of range)
+  - `gameState`: Win/loss flags (host writes, all clients read; fallback useEffect watches for victory)
+- **Client Responsibilities**: 
+  - **Host**: Runs game loop, updates enemies, handles collisions, determines victory/defeat, syncs to RTDB, clears stale projectiles on init
+  - **Non-Host**: Reads state from RTDB, renders canvas, sends own player position/inputs
+  - **All Clients**: Send their own projectiles to RTDB (10Hz position updates), update own player position (20Hz sync)
+- **Projectile ID Format**: `proj-{Date.now()}-{random7chars}-{userId}` — Firebase-safe (no dots or special chars).
+- **Session Lifecycle**:
+  - **Battle Init**: Host clears `battle/projectiles` to prevent stale bullets from previous sessions.
+  - **Victory Detection**: Host sets `gameState.gameWon = true`; fallback `useEffect` on `enemiesCount === 0` ensures all clients see victory.
+  - **Manual Exit**: "X" button calls `onBattleEnd()` with confirmation, resetting `gameState.mode` to `'whiteboard'`.
+  - **Auto-Reset**: When presence count hits 0, `CohortRoomPage` resets `gameState` to whiteboard mode.
+- **Enemy Generation**: Drawings converted to enemies on battle start. Each enemy stores original path relative to center, then transforms based on center position and scale during gameplay.
+- **Collision Detection**: Host performs all collision checks (projectile-enemy, enemy-player) using line-segment intersection for enemies and circle collision for projectiles/players.
 
 ## Integration Points
 - **Auth Context**: `AuthContext.tsx` manages global user state (user, login, signup, logout).

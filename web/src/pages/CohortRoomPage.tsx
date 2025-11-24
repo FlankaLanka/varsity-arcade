@@ -77,6 +77,20 @@ export default function CohortRoomPage() {
       } else {
         setMembers([]);
       }
+
+      if (currentPresentIds.length === 0) {
+        try {
+          const gameStateRef = ref(rtdb, `cohorts/${cohortId}/gameState`);
+          await set(gameStateRef, {
+            mode: 'whiteboard',
+            drawings: [],
+            startedBy: null,
+            startedAt: null,
+          });
+        } catch (error) {
+          console.error('Failed to reset game state when cohort emptied:', error);
+        }
+      }
     });
 
     return () => unsubscribe();
@@ -91,7 +105,7 @@ export default function CohortRoomPage() {
       if (!snapshot.exists()) {
         navigate('/cohorts');
         return;
-      }
+    }
 
       const cohortData = snapshot.data() as Cohort;
       setCohort({ ...cohortData, id: snapshot.id });
@@ -104,15 +118,79 @@ export default function CohortRoomPage() {
     return () => unsubscribe();
   }, [cohortId, navigate]);
 
+  // Listen to game state changes (mode, drawings) from RTDB for multiplayer sync
+  useEffect(() => {
+    if (!cohortId) return;
+
+    const gameStateRef = ref(rtdb, `cohorts/${cohortId}/gameState`);
+    
+    const unsubscribe = onValue(gameStateRef, (snapshot) => {
+      const gameState = snapshot.val();
+      if (gameState) {
+        // Update mode for all users
+        if (gameState.mode === 'battle' || gameState.mode === 'whiteboard') {
+          setMode(gameState.mode);
+        }
+        
+        // Update drawings when battle starts
+        if (gameState.mode === 'battle' && gameState.drawings) {
+          setDrawings(gameState.drawings);
+        }
+        
+        // If returning to whiteboard, clear drawings
+        if (gameState.mode === 'whiteboard') {
+          setDrawings([]);
+        }
+
+      } else {
+        // Default to whiteboard if no game state exists
+        setMode('whiteboard');
+        setDrawings([]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [cohortId]);
+
   if (loading || !cohort) return <div className="text-white p-10">Loading cohort...</div>;
 
-  const handleVerificationSuccess = (finalDrawings: WhiteboardDrawing[]) => {
-    setDrawings(finalDrawings);
-    setMode('battle');
+  const handleVerificationSuccess = async (finalDrawings: WhiteboardDrawing[]) => {
+    if (!cohortId || !user?.id) return;
+    
+    try {
+      // Update game state in RTDB so all users see the battle start
+      const gameStateRef = ref(rtdb, `cohorts/${cohortId}/gameState`);
+      await set(gameStateRef, {
+        mode: 'battle',
+        drawings: finalDrawings,
+        startedBy: user.id,
+        startedAt: Date.now()
+      });
+      
+      // Local state will be updated by the listener above
+    } catch (error) {
+      console.error("Failed to start battle:", error);
+      alert("Failed to start battle. Please try again.");
+    }
   };
 
-  const handleBattleEnd = () => {
-    setMode('whiteboard');
+  const handleBattleEnd = async () => {
+    if (!cohortId) return;
+    
+    try {
+      // Update game state to return to whiteboard
+      const gameStateRef = ref(rtdb, `cohorts/${cohortId}/gameState`);
+      await set(gameStateRef, {
+        mode: 'whiteboard',
+        drawings: [],
+        startedBy: null,
+        startedAt: null
+      });
+      
+      // Local state will be updated by the listener above
+    } catch (error) {
+      console.error("Failed to end battle:", error);
+    }
   };
 
   const handleDeleteCohort = async () => {
@@ -127,7 +205,9 @@ export default function CohortRoomPage() {
       const rtdbRefs = [
         ref(rtdb, `cohorts/${cohortId}/presence`),
         ref(rtdb, `cohorts/${cohortId}/whiteboard`),
-        ref(rtdb, `cohorts/${cohortId}/battle`)
+        ref(rtdb, `cohorts/${cohortId}/battle`),
+        ref(rtdb, `cohorts/${cohortId}/gameState`),
+        ref(rtdb, `cohorts/${cohortId}/cursors`)
       ];
       
       await Promise.all(rtdbRefs.map(ref => remove(ref).catch(() => {}))); // Ignore errors if paths don't exist
@@ -168,7 +248,7 @@ export default function CohortRoomPage() {
               DELETE
             </button>
           )}
-          <button 
+        <button 
             onClick={async () => {
               if (!cohortId || !user?.id || !cohort) return;
               
@@ -183,10 +263,10 @@ export default function CohortRoomPage() {
               
               navigate('/cohorts');
             }}
-            className="text-xs text-gray-400 hover:text-white"
-          >
-            EXIT
-          </button>
+          className="text-xs text-gray-400 hover:text-white"
+        >
+          EXIT
+        </button>
         </div>
       </header>
 

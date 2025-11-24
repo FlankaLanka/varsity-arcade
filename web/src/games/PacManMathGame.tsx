@@ -1107,24 +1107,24 @@ export const PacManMathGame = () => {
         containerClassName="aspect-[7/6]"
         overlay={
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80">
-            <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">GAME OVER</h2>
-            <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
-            
-            <div className="flex gap-4">
-              <button 
-                onClick={() => window.location.reload()} 
-                className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
-              >
-                RETRY
-              </button>
-              <button 
-                onClick={() => navigate('/results', { state: { score, game: 'Pac-Man: Math Blitz' } })}
-                className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
-              >
-                CONTINUE
-              </button>
+              <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">GAME OVER</h2>
+              <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
+              
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
+                >
+                  RETRY
+                </button>
+                <button 
+                  onClick={() => navigate('/results', { state: { score, game: 'Pac-Man: Math Blitz' } })}
+                  className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
+                >
+                  CONTINUE
+                </button>
+              </div>
             </div>
-          </div>
         }
       >
         <canvas ref={canvasRef} className="w-full h-full block" />
@@ -1141,21 +1141,21 @@ export const PacManMathGame = () => {
     >
       {/* Top UI - now part of GameFrame mostly, but custom math display needed? */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-center w-full pointer-events-none">
-        <div className="text-gray-400 text-xs mb-1 font-pixel">
-          {isSupercharged ? 'POWER ACTIVE!' : 'SOLVE TO GET POWER'}
-        </div>
+            <div className="text-gray-400 text-xs mb-1 font-pixel">
+              {isSupercharged ? 'POWER ACTIVE!' : 'SOLVE TO GET POWER'}
+            </div>
         <div className="text-neon-cyan text-2xl font-pixel text-shadow">
-          {isSupercharged 
-            ? currentProblem.equation.replace('_', currentProblem.answer.toString())
-            : currentProblem.equation}
-        </div>
-      </div>
-
-      <canvas 
-        ref={canvasRef} 
-        className="w-full h-full bg-transparent cursor-none"
-        onClick={(e) => e.currentTarget.focus()}
-      />
+              {isSupercharged 
+                ? currentProblem.equation.replace('_', currentProblem.answer.toString())
+                : currentProblem.equation}
+            </div>
+          </div>
+          
+          <canvas 
+            ref={canvasRef} 
+            className="w-full h-full bg-transparent cursor-none"
+            onClick={(e) => e.currentTarget.focus()}
+          />
     </GameFrame>
   );
 };

@@ -155,22 +155,22 @@ export default function CohortsPage() {
         {isLoading ? (
           <div className="text-center py-20 text-gray-500">Loading cohorts...</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {displayedCohorts.length > 0 ? (
-              displayedCohorts.map(cohort => (
-                <CohortCard 
-                  key={cohort.id} 
-                  cohort={cohort} 
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {displayedCohorts.length > 0 ? (
+            displayedCohorts.map(cohort => (
+              <CohortCard 
+                key={cohort.id} 
+                cohort={cohort} 
                   onlineCount={onlineCounts[cohort.id] ?? 0}
-                  onJoin={() => handleJoinCohort(cohort.id)} 
-                />
-              ))
-            ) : (
-              <div className="col-span-full text-center py-20 text-gray-500">
-                <p>NO COHORTS FOUND.</p>
-              </div>
-            )}
-          </div>
+                onJoin={() => handleJoinCohort(cohort.id)} 
+              />
+            ))
+          ) : (
+            <div className="col-span-full text-center py-20 text-gray-500">
+              <p>NO COHORTS FOUND.</p>
+            </div>
+          )}
+        </div>
         )}
       </div>
 
