@@ -44,6 +44,7 @@ export default function WhiteboardBattle({ drawings, onBattleEnd }: WhiteboardBa
   const requestRef = useRef<number>();
   const keysRef = useRef<{ [key: string]: boolean }>({});
   const mouseRef = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
+  const mouseDownRef = useRef(false);
   
   // Game State
   const [health, setHealth] = useState(100);
@@ -117,10 +118,18 @@ export default function WhiteboardBattle({ drawings, onBattleEnd }: WhiteboardBa
             y: e.clientY - rect.top
         };
     };
+    const handleMouseDown = (e: MouseEvent) => {
+        if (e.button === 0) mouseDownRef.current = true;
+    };
+    const handleMouseUp = (e: MouseEvent) => {
+        if (e.button === 0) mouseDownRef.current = false;
+    };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp); // Capture release outside canvas
 
     // Start Loop
     requestRef.current = requestAnimationFrame(gameLoop);
@@ -129,6 +138,8 @@ export default function WhiteboardBattle({ drawings, onBattleEnd }: WhiteboardBa
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       canvas.removeEventListener('mousemove', handleMouseMove);
+      canvas.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
   }, [drawings]);
@@ -149,8 +160,8 @@ export default function WhiteboardBattle({ drawings, onBattleEnd }: WhiteboardBa
       if (keysRef.current['KeyA'] || keysRef.current['ArrowLeft']) state.player.x = Math.max(state.player.radius, state.player.x - state.player.speed);
       if (keysRef.current['KeyD'] || keysRef.current['ArrowRight']) state.player.x = Math.min(width - state.player.radius, state.player.x + state.player.speed);
 
-      // Shooting (Aim at mouse)
-      if (keysRef.current['Space']) {
+      // Shooting (Left Click / Hold)
+      if (mouseDownRef.current) {
         if (time - state.lastShotTime > 200) { // Fire rate limit
           const dx = mouseRef.current.x - state.player.x;
           const dy = mouseRef.current.y - state.player.y;
