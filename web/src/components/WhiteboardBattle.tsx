@@ -97,9 +97,9 @@ export default function WhiteboardBattle({ drawings, onBattleEnd }: WhiteboardBa
         center: { ...center },
         color: drawing.color,
         speed: 0.5 + Math.random() * 0.5,
-        scale: 0.1, // Start small
-        maxScale: 1.0 + Math.random() * 0.5, // Grow to full size or larger
-        growthRate: 0.005 + Math.random() * 0.005,
+        scale: 1.0, // Start full size
+        maxScale: 2.0 + Math.random() * 0.5,
+        growthRate: 0.002 + Math.random() * 0.002,
         health: 1
       });
     });
@@ -305,7 +305,7 @@ export default function WhiteboardBattle({ drawings, onBattleEnd }: WhiteboardBa
       
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      ctx.lineWidth = 5 * enemy.scale; // Scale thickness
+      ctx.lineWidth = Math.max(3, 5 * enemy.scale); // Ensure visibility
       ctx.strokeStyle = enemy.color;
       
       // Glow effect
