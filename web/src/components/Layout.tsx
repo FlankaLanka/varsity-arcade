@@ -113,7 +113,7 @@ export const Layout = () => {
                 title="Profile"
               >
                 <UserCircle2 size={20} className={isProfileOpen ? "text-neon-cyan" : ""} />
-              </button>
+            </button>
               
               <ProfileDropdown 
                 isOpen={isProfileOpen} 

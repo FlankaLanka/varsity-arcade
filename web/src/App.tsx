@@ -9,6 +9,8 @@ import { ResultsPage } from './pages/ResultsPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { FriendProfilePage } from './pages/FriendProfilePage';
+import CohortsPage from './pages/CohortsPage';
+import CohortRoomPage from './pages/CohortRoomPage';
 
 function App() {
   return (
@@ -23,6 +25,8 @@ function App() {
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/friend/:friendId" element={<FriendProfilePage />} />
+          <Route path="/cohorts" element={<CohortsPage />} />
+          <Route path="/cohorts/:cohortId" element={<CohortRoomPage />} />
           <Route path="*" element={<div className="p-10 text-center text-neon-pink font-pixel">404: LEVEL NOT FOUND</div>} />
         </Route>
       </Routes>

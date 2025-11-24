@@ -1,0 +1,312 @@
+import React, { useRef, useState, useEffect } from 'react';
+import { Eraser, Undo, Redo, Trash2, PenTool, Check } from 'lucide-react';
+import type { WhiteboardDrawing } from '../types/cohort';
+
+interface WhiteboardProps {
+  onVerifySuccess: (drawings: WhiteboardDrawing[]) => void;
+}
+
+const COLORS = ['#FFFFFF', '#FF0055', '#00FFFF', '#55FF00', '#FFFF00'];
+const BRUSH_SIZES = [2, 4, 8, 12];
+
+export default function Whiteboard({ onVerifySuccess }: WhiteboardProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [currentPath, setCurrentPath] = useState<{ x: number; y: number }[]>([]);
+  const [drawings, setDrawings] = useState<WhiteboardDrawing[]>([]);
+  const [redoStack, setRedoStack] = useState<WhiteboardDrawing[]>([]);
+  
+  const [color, setColor] = useState(COLORS[0]);
+  const [brushSize, setBrushSize] = useState(BRUSH_SIZES[1]);
+  const [isEraser, setIsEraser] = useState(false);
+  
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  // Resize observer to handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (canvasRef.current) {
+        const parent = canvasRef.current.parentElement;
+        if (parent) {
+          canvasRef.current.width = parent.clientWidth;
+          canvasRef.current.height = parent.clientHeight;
+          redraw();
+        }
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Initial size
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, []); // Run once on mount
+
+  // Redraw canvas whenever drawings change
+  useEffect(() => {
+    redraw();
+  }, [drawings, currentPath]); // Depend on currentPath to see live drawing
+
+  const redraw = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw grid background
+    drawGrid(ctx, canvas.width, canvas.height);
+
+    // Draw all saved drawings
+    drawings.forEach(drawing => {
+      drawPath(ctx, drawing.path, drawing.color, drawing.brushSize);
+    });
+
+    // Draw current path being drawn
+    if (currentPath.length > 0) {
+      drawPath(ctx, currentPath, isEraser ? '#000000' : color, brushSize); // Eraser color needs logic? 
+      // Actually erase logic is tricky on canvas without globalCompositeOperation
+      // For simplicity, we'll use globalCompositeOperation for eraser
+    }
+  };
+
+  const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    ctx.strokeStyle = '#1f2937'; // gray-800
+    ctx.lineWidth = 1;
+    const gridSize = 40;
+
+    for (let x = 0; x <= width; x += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+
+    for (let y = 0; y <= height; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+  };
+
+  const drawPath = (ctx: CanvasRenderingContext2D, path: { x: number; y: number }[], strokeColor: string, strokeWidth: number) => {
+    if (path.length < 2) return;
+
+    ctx.beginPath();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = strokeWidth;
+    ctx.strokeStyle = strokeColor;
+
+    ctx.moveTo(path[0].x, path[0].y);
+    for (let i = 1; i < path.length; i++) {
+      ctx.lineTo(path[i].x, path[i].y);
+    }
+    ctx.stroke();
+  };
+
+  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    if (isVerifying) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const { x, y } = getCoordinates(e, canvas);
+    setIsDrawing(true);
+    setCurrentPath([{ x, y }]);
+  };
+
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawing || isVerifying) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const { x, y } = getCoordinates(e, canvas);
+    setCurrentPath(prev => [...prev, { x, y }]);
+  };
+
+  const stopDrawing = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+
+    if (currentPath.length > 1) {
+      const newDrawing: WhiteboardDrawing = {
+        id: Date.now().toString(),
+        path: currentPath,
+        color: isEraser ? '#111827' : color, // Use background color for eraser visual simulation or specialized render
+        brushSize: brushSize,
+        timestamp: Date.now(),
+        type: 'path'
+      };
+      
+      // If eraser, we might want to actually remove things, but for now painting over with bg color is simpler
+      // Or we can use globalCompositeOperation 'destination-out' but that requires managing layer state carefully.
+      // Let's stick to painting over for MVP unless we want "physics objects" to not include eraser strokes.
+      // Wait, if we convert to physics objects, eraser strokes as objects would be weird.
+      // If isEraser, maybe we don't add to drawings but modify existing? Too complex.
+      // Let's just say eraser is a "black brush" for now, and handle physics conversion later (maybe filter out black strokes).
+      
+      setDrawings([...drawings, newDrawing]);
+      setRedoStack([]); // Clear redo stack on new action
+    }
+    setCurrentPath([]);
+  };
+
+  const getCoordinates = (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) => {
+    const rect = canvas.getBoundingClientRect();
+    let clientX, clientY;
+    
+    if ('touches' in e) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = (e as React.MouseEvent).clientX;
+      clientY = (e as React.MouseEvent).clientY;
+    }
+
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    };
+  };
+
+  const handleUndo = () => {
+    if (drawings.length === 0) return;
+    const newDrawings = [...drawings];
+    const removed = newDrawings.pop();
+    if (removed) {
+      setDrawings(newDrawings);
+      setRedoStack([...redoStack, removed]);
+    }
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length === 0) return;
+    const newRedoStack = [...redoStack];
+    const restored = newRedoStack.pop();
+    if (restored) {
+      setDrawings([...drawings, restored]);
+      setRedoStack(newRedoStack);
+    }
+  };
+
+  const handleClear = () => {
+    if (window.confirm('Clear whiteboard?')) {
+      setDrawings([]);
+      setRedoStack([]);
+    }
+  };
+
+  const handleVerify = () => {
+    setIsVerifying(true);
+    // Simulate AI verification delay
+    setTimeout(() => {
+      setIsVerifying(false);
+      onVerifySuccess(drawings);
+    }, 2000);
+  };
+
+  return (
+    <div className="flex-1 relative bg-gray-900 cursor-crosshair">
+      <canvas
+        ref={canvasRef}
+        onMouseDown={startDrawing}
+        onMouseMove={draw}
+        onMouseUp={stopDrawing}
+        onMouseLeave={stopDrawing}
+        onTouchStart={startDrawing}
+        onTouchMove={draw}
+        onTouchEnd={stopDrawing}
+        className="absolute inset-0 block touch-none"
+      />
+      
+      {/* Loading Overlay */}
+      {isVerifying && (
+        <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
+          <div className="text-neon-cyan font-['Press_Start_2P'] text-xl mb-4 animate-pulse">
+            VERIFYING SOLUTION...
+          </div>
+          <div className="w-64 h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div className="h-full bg-neon-cyan animate-[loading_2s_ease-in-out_infinite]" style={{ width: '100%' }}></div>
+          </div>
+        </div>
+      )}
+
+      {/* Toolbar */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-800/90 border border-gray-700 rounded-lg p-2 flex items-center gap-4 shadow-xl z-40 backdrop-blur-sm">
+        {/* Tools */}
+        <div className="flex items-center gap-2 border-r border-gray-700 pr-4">
+          <button
+            onClick={() => setIsEraser(false)}
+            className={`p-2 rounded hover:bg-gray-700 transition-colors ${!isEraser ? 'bg-neon-blue/20 text-neon-blue' : 'text-gray-400'}`}
+            title="Pen"
+          >
+            <PenTool size={20} />
+          </button>
+          <button
+            onClick={() => setIsEraser(true)}
+            className={`p-2 rounded hover:bg-gray-700 transition-colors ${isEraser ? 'bg-neon-blue/20 text-neon-blue' : 'text-gray-400'}`}
+            title="Eraser"
+          >
+            <Eraser size={20} />
+          </button>
+        </div>
+
+        {/* Colors */}
+        <div className="flex items-center gap-2 border-r border-gray-700 pr-4">
+          {COLORS.map(c => (
+            <button
+              key={c}
+              onClick={() => {
+                setColor(c);
+                setIsEraser(false);
+              }}
+              className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${color === c && !isEraser ? 'border-white scale-110 shadow-[0_0_8px_currentColor]' : 'border-transparent'}`}
+              style={{ backgroundColor: c, color: c }}
+            />
+          ))}
+        </div>
+
+        {/* Brush Size */}
+        <div className="flex items-center gap-2 border-r border-gray-700 pr-4">
+          {BRUSH_SIZES.map(size => (
+            <button
+              key={size}
+              onClick={() => setBrushSize(size)}
+              className={`rounded-full bg-gray-400 hover:bg-white transition-all ${brushSize === size ? 'bg-white shadow-[0_0_8px_white]' : ''}`}
+              style={{ width: size + 4, height: size + 4 }}
+            />
+          ))}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2">
+          <button onClick={handleUndo} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded" title="Undo">
+            <Undo size={18} />
+          </button>
+          <button onClick={handleRedo} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded" title="Redo">
+            <Redo size={18} />
+          </button>
+          <button onClick={handleClear} className="p-2 text-red-500 hover:text-red-400 hover:bg-gray-700 rounded" title="Clear">
+            <Trash2 size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* Verify Button - Bottom Right */}
+      <div className="absolute bottom-4 right-4 z-40">
+        <button
+          onClick={handleVerify}
+          disabled={drawings.length === 0 || isVerifying}
+          className="w-12 h-12 bg-neon-green hover:bg-neon-green/80 disabled:opacity-50 disabled:cursor-not-allowed text-black rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(41,255,100,0.4)] transition-all hover:scale-110 disabled:hover:scale-100"
+          title="Verify Solution"
+        >
+          <Check size={24} />
+        </button>
+      </div>
+
+    </div>
+  );
+}
+

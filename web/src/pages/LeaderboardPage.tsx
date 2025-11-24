@@ -41,7 +41,7 @@ export const LeaderboardPage = () => {
     { id: 'all', name: 'ALL GAMES' },
     { id: 'asteroids', name: 'ASTEROIDS' },
     { id: 'pacman', name: 'PAC-MAN' },
-    { id: 'math', name: 'MATH INVADERS' }
+    { id: 'math', name: 'PH INVADERS' }
   ];
   
   const periods = [
