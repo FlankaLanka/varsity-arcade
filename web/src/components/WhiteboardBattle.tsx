@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import type { WhiteboardDrawing } from '../types/cohort';
-import { circleIntersectsSegment, getPathCenter, Point } from '../utils/geometry';
+import { circleIntersectsSegment, getPathCenter, type Point } from '../utils/geometry';
 
 interface WhiteboardBattleProps {
   drawings: WhiteboardDrawing[];
