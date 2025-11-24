@@ -26,11 +26,15 @@
 - **`ResultsPage.tsx`**: Game completion screen with viral loops
 - **`ProfilePage.tsx`**: Full user profile page with XP, achievements, quests, stats, activity, and settings
 - **`FriendProfilePage.tsx`**: Friend profile page (similar to user profile, without settings/quests)
+- **`CohortsPage.tsx`**: Main cohorts listing with Public/Friends tabs and search
+- **`CohortRoomPage.tsx`**: Collaborative room with Whiteboard, Battle Mode, Members, Voice, and AI Chat
 
 ### Game Components
 - **`AsteroidsGame.tsx`**: Asteroids: Synonym Shooter implementation
 - **`PacManMathGame.tsx`**: Pac-Man: Math Blitz implementation
 - **`PHInvadersGame.tsx`**: pH Invaders: Chemistry Challenge implementation
+- **`Whiteboard.tsx`**: Interactive drawing canvas with verify workflow
+- **`WhiteboardBattle.tsx`**: Minigame transforming drawings into enemies (Cooperative Defense)
 
 ## Game Architecture Patterns
 
@@ -59,11 +63,13 @@ const loop = (currentTime: number) => {
 ### Collision Detection
 - **Grid-based** (Pac-Man): Tile-based collision, check valid paths
 - **Geometric** (Asteroids, pH Invaders): Distance-based collision detection
+- **Line-Segment** (Whiteboard Battle): Precise intersection check between projectiles/player (circles) and enemy paths (line segments)
 
 ### AI Patterns
 - **Pac-Man Ghosts**: Intersection-based movement, individual targeting strategies, no-reverse rule
 - **Asteroids Enemies**: Simple chase/flee logic
 - **pH Invaders Enemies**: Formation-based movement, periodic shooting, side-to-side descent
+- **Whiteboard Battle Enemies**: Center-of-mass chase logic with scaling growth
 
 ## Design Principles
 - **Modular Games**: Each game is a self-contained component
@@ -71,6 +77,7 @@ const loop = (currentTime: number) => {
 - **Canvas Rendering**: All game graphics use Canvas API for performance
 - **State Isolation**: Game state in refs, UI state in React state
 - **Responsive Design**: Games scale to container size
+- **Cooperative Defense**: Battle minigame emphasizes teamwork and creativity (drawings become content)
 
 ## Integration Points
 - **Firebase Auth**: User authentication (pending implementation)
@@ -129,6 +136,15 @@ const loop = (currentTime: number) => {
    - Enemy kills (50-100 points)
    - pH maintenance (10-100 points/second based on proximity to pH 7)
 7. Game ends when all enemies defeated, timer expires, or lives reach 0
+
+### Collaborative Whiteboard Flow
+1. Users join a Cohort Room
+2. Collaborate on whiteboard (draw/erase)
+3. User triggers "Verify Solution"
+4. On success, whiteboard transforms into Battle Mode
+5. Drawings become enemies (stroke-based physics objects)
+6. Players fight enemies using cooperative mechanics
+7. Victory/Defeat returns to whiteboard mode
 
 ## Action Items
 - Document additional games as they're implemented

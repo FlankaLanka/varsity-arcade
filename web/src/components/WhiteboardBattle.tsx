@@ -198,10 +198,10 @@ export default function WhiteboardBattle({ drawings, onBattleEnd }: WhiteboardBa
 
     // 3. Update Enemies
     state.enemies.forEach(enemy => {
-      // Growth
-      if (enemy.scale < enemy.maxScale) {
-        enemy.scale += enemy.growthRate;
-      }
+      // Growth logic removed
+      // if (enemy.scale < enemy.maxScale) {
+      //   enemy.scale += enemy.growthRate;
+      // }
 
       // Chase Player
       if (state.health > 0) {

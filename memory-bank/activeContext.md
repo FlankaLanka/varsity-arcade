@@ -3,14 +3,38 @@
 _Last updated: 2025-01-XX_
 
 ## Current Focus
-- All three games are complete and playable:
+- All four games/experiences are complete and playable:
   - **Asteroids: Synonym Shooter** - Vocabulary-based space shooter
   - **Pac-Man: Math Blitz** - Math problem-solving with classic Pac-Man mechanics
   - **pH Invaders** - Chemistry education with Space Invaders gameplay
-- **User Profile & Social System** - Complete profile page, XP progression, achievements, friends list with modals
-- Ready for backend integration and additional features
+  - **Whiteboard Battle** - Collaborative drawing turned into a cooperative defense shooter
+- **Cohort System** - Complete implementation of cohort creation, joining, room layout, and whiteboard-to-battle workflow.
+- **User Profile & Social System** - Complete profile page, XP progression, achievements, friends list with modals.
+- Ready for backend integration and additional features.
 
 ## Recently Completed
+- **Whiteboard Enhancements**:
+  - Added **Primitive Shape Tools**: Square/Rectangle, Circle, and Triangle.
+  - Implemented "drag-to-draw" preview logic for shapes.
+  - Shapes are generated as paths (polygons), ensuring full compatibility with the Whiteboard Battle minigame (they become enemies).
+
+- **Minigame Rework (Whiteboard Battle)**:
+  - Transitioned from `matter.js` physics to a custom **Cooperative Defense** mode.
+  - **Stroke Enemies**: Drawings now become the enemies themselves, maintaining their exact shape (lines, curves) instead of being converted to circles or generic objects.
+  - **Movement**: Enemies chase the player's center of mass.
+  - **Combat**: Players shoot projectiles aimed at the mouse cursor. Projectiles destroy enemies on contact using precise line-segment collision detection.
+  - **Win/Loss**: Destroy all enemies to win; team health reaches 0 to lose.
+  - **Visibility**: Enforced minimum line width and 100% initial scale to ensure enemies are clearly visible.
+  - **Controls**: Shooting now triggered by **Left Mouse Click (or Hold)** instead of Spacebar.
+  - **Mechanics**: Enemy growth (scaling) disabled per user request.
+
+- **Cohort System Implementation**:
+  - **Cohorts List**: Searchable list of Public and Friends cohorts, with creation modal (Public/Friends/Private).
+  - **Cohort Room**: Integrated layout with Member Sidebar, AI Chat, and Voice Controls.
+  - **Whiteboard**: Full drawing capabilities (pen, eraser, colors, undo/redo) with "Verify Solution" workflow.
+  - **AI Chat**: Simulated AI tutor providing hints and encouragement.
+  - **Voice Controls**: Retro UI for audio management.
+  
 - **Pac-Man: Math Blitz Game Mechanics**:
   - Implemented complete game with grid-based maze, WASD movement
   - Math equation solving system (4 power pellets with answer choices)
@@ -23,6 +47,7 @@ _Last updated: 2025-01-XX_
   - Fixed player spawn position (was on wall, now on valid path)
   - All power pellets same color (removed visual hint for correct answer)
   - Improved font clarity for numbers on pellets (bold, larger, white stroke)
+  
 - **Asteroids: Synonym Shooter** game is playable with WASD movement, mouse shooting, 60-second timer
 - **pH Invaders: Chemistry Challenge** game is complete:
   - pH bar management system (0-14 scale, color-coded)
@@ -34,6 +59,7 @@ _Last updated: 2025-01-XX_
   - Extended game window (600px) with UI positioned to not block gameplay
   - All scores as integers, pH values with 1 decimal place
   - Game-specific thumbnail on homepage
+  
 - **Arcade Hub** with game-specific thumbnails and game selection cards
 - **Leaderboard** page with synthetic data
 - **Results** page for game completion
@@ -63,21 +89,24 @@ _Last updated: 2025-01-XX_
 6. Wire profile settings to actual persistence
 7. Implement friend request/accept system
 8. Add real-time presence detection for friends
+9. Implement real-time synchronization for whiteboard/battle (multiplayer)
 
 ## Decisions & Conventions
 - **Visual Style**: Pixelated outer space theme (retro fonts, deep cosmos backgrounds) for the entire UI.
 - **Interactivity**: Use parallax effects (moving starfield) to create depth and "aliveness" in the UI.
 - **Assets**: Source game assets from OpenGameArt (Kenney's packs) and use Google Fonts (Press Start 2P).
-- **Game Development**: Canvas API for rendering, requestAnimationFrame for game loops, grid-based collision for Pac-Man
+- **Game Development**: Canvas API for rendering, requestAnimationFrame for game loops.
+- **Physics**: Custom line-segment collision and movement logic for Whiteboard Battle (replaced `matter.js` for better multiplayer viability).
 - **Ghost AI**: Implemented authentic Pac-Man ghost behavior with intersection-based movement, no-reverse rule, and individual targeting strategies
 - **pH Invaders**: Chemistry education through gameplay - players learn compound acidity/basicity while managing pH balance
 - **Chemical Notation**: Proper subscript rendering for chemical formulas using canvas text manipulation
 - **Score Display**: All scores display as integers (no leading zeros), pH values with 1 decimal place
 - **Profile & Social**: Profile page consolidates profile and settings. Friends modal persists when dropdown closes. Modal centered on screen. Friend profile pages omit settings and daily quests.
 - **XP System**: Exponential leveling curve (100 * (level - 1)^1.5), XP from scores, completions, achievements, and quests. Streak multipliers up to 2x.
+- **Cohort System**: Single-user whiteboard transforms to cooperative defense battle on verification. Uses mock data for cohorts/members until backend integration.
 - Always read every Memory Bank file at the start of a task.
 - Update Memory Bank immediately after making meaningful code or process changes.
 - Use `.cursorrules` to store recurring patterns, preferences, or insights that improve future work.
 
 ## Blockers
-- None currently. Game is playable and functional.
+- None currently. Games and systems are functional.

@@ -104,10 +104,11 @@
 - ✅ Game loop using `requestAnimationFrame`
 - ✅ State management with `useRef` and `useState`
 - ✅ Input handling (keyboard and mouse events)
-- ✅ Collision detection (grid-based for Pac-Man, geometric for Asteroids)
+- ✅ Collision detection (grid-based for Pac-Man, geometric for Asteroids, line-segment for Battle)
 - ✅ AI pathfinding and movement algorithms
 - ✅ Responsive UI layouts
 - ✅ Game state persistence during gameplay
+- ✅ Integrated `matter.js` (later removed in favor of custom logic for Battle mode)
 
 ### User Profile & Social System
 - ✅ Profile page (`/profile`) with comprehensive user information:
@@ -151,6 +152,30 @@
 - ✅ TypeScript types for user profiles, achievements, quests, friends, game stats, and activity history
 - ✅ Mock data system for development and testing
 
+### Cohort System & Whiteboard Battle
+- ✅ **Cohorts List Page**:
+  - Filtering between Friends Cohorts and Public Cohorts
+  - Search functionality
+  - Cohort cards with privacy badges (Public/Friends/Private) and member counts
+  - Create Cohort modal (Title, Privacy, Description)
+  - Mock data system for cohorts and memberships
+- ✅ **Cohort Room Page**:
+  - Dedicated layout with Member Sidebar, Main Stage, AI Chat, and Voice Controls
+  - Member sidebar showing online status
+  - AI Chat interface with simulated tutor responses
+  - Retro-styled voice chat controls (mute/unmute, volume)
+- ✅ **Collaborative Whiteboard**:
+  - Single-user drawing tools (Pen, Eraser, Colors, Brush Size)
+  - Undo/Redo functionality
+  - "Verify Solution" button simulating AI verification
+- ✅ **Cooperative Defense (Whiteboard Battle)**:
+  - **Stroke Enemies**: Drawings become growing, moving stroke-based enemies (custom rendering).
+  - **Mechanics**: Players shoot projectiles at mouse cursor to destroy strokes.
+  - **Physics**: Precise line-segment collision detection.
+  - **Visibility**: Improved scaling (100% start) and line width to prevent "dot" artifacting.
+  - **Control Update**: Shooting now triggered by **Left Mouse Click (or Hold)** instead of Spacebar.
+  - **Multiplayer Ready**: Logic decoupled from physics engine for easier Firebase sync.
+
 ## Pending Work
 - Connect to Firebase backend (Auth, Firestore, Realtime DB, Functions, Storage)
 - Implement real leaderboards with user data
@@ -160,9 +185,11 @@
 - Wire profile settings to actual persistence
 - Implement friend request/accept system
 - Add real-time presence detection for friends
+- Implement real-time synchronization for whiteboard and battle mode (multiplayer)
 - Testing and bug fixes as needed
 
 ## Completed Games
 1. ✅ **Asteroids: Synonym Shooter** - Vocabulary-based space shooter
 2. ✅ **Pac-Man: Math Blitz** - Math problem-solving maze game
 3. ✅ **pH Invaders** - Chemistry pH management with Space Invaders gameplay
+4. ✅ **Whiteboard Battle** - Collaborative defense shooter using user drawings
