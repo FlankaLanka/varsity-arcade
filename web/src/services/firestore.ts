@@ -3,20 +3,19 @@ import {
   doc, 
   getDoc, 
   getDocs, 
-  setDoc, 
   updateDoc, 
   addDoc,
   query, 
   where, 
   arrayUnion,
-  arrayRemove,
   Timestamp,
   deleteDoc
 } from 'firebase/firestore';
 import { db, rtdb } from '../lib/firebase';
 import { ref, get } from 'firebase/database';
-import type { UserProfile, GameType } from '../types/user';
+import type { UserProfile, GameType, ActivityEntry } from '../types/user';
 import type { Cohort, CohortMember, CohortPrivacy } from '../types/cohort';
+import { calculateLevel, calculateCohortSolveXP, calculateBattleWinXP } from '../utils/xpSystem';
 
 // --- User Services ---
 
@@ -31,21 +30,14 @@ export const updateUserStats = async (
   gameType: GameType, 
   score: number, 
   xp: number
-) => {
+): Promise<UserProfile | null> => {
   const userRef = doc(db, 'users', userId);
-  // Note: Deep updates in Firestore can be tricky with dot notation.
-  // For simpler implementations, fetching, updating object, and saving back is easier but less atomic.
-  // Here we use atomic updates where possible.
   
-  // This is a simplified update. In a real app, we'd need to read current stats to calculate new totals
-  // or use a cloud function/transaction for atomic increments.
-  
-  // For now, we will fetch-update-write for simplicity in this migration
   const userDoc = await getDoc(userRef);
-  if (!userDoc.exists()) return;
+  if (!userDoc.exists()) return null;
   
   const userData = userDoc.data() as UserProfile;
-  const currentStats = userData.gameStats[gameType];
+  const currentStats = userData.gameStats[gameType] || { highScore: 0, gamesPlayed: 0, totalXP: 0, bestStreak: 0 };
   
   const newStats = {
     highScore: Math.max(currentStats.highScore, score),
@@ -54,12 +46,30 @@ export const updateUserStats = async (
     bestStreak: currentStats.bestStreak // Streak logic needs more context, keeping as is
   };
 
+  const newTotalXP = userData.totalXP + xp;
+  const newLevel = calculateLevel(newTotalXP);
+  const newGamesPlayed = userData.gamesPlayed + 1;
+  const newGamesCompleted = userData.gamesCompleted + 1;
+
   await updateDoc(userRef, {
     [`gameStats.${gameType}`]: newStats,
     totalScore: userData.totalScore + score,
-    totalXP: userData.totalXP + xp,
-    gamesPlayed: userData.gamesPlayed + 1
+    totalXP: newTotalXP,
+    level: newLevel,
+    gamesPlayed: newGamesPlayed,
+    gamesCompleted: newGamesCompleted
   });
+
+  // Return updated profile
+  return {
+    ...userData,
+    gameStats: { ...userData.gameStats, [gameType]: newStats },
+    totalScore: userData.totalScore + score,
+    totalXP: newTotalXP,
+    level: newLevel,
+    gamesPlayed: newGamesPlayed,
+    gamesCompleted: newGamesCompleted
+  };
 };
 
 // --- Cohort Services ---
@@ -133,12 +143,12 @@ export const getCohortById = async (cohortId: string): Promise<Cohort | null> =>
 };
 
 // No-op: Joining is now just entering the room (handled by RTDB presence)
-export const joinCohort = async (cohortId: string, userId: string): Promise<boolean> => {
+export const joinCohort = async (_cohortId: string, _userId: string): Promise<boolean> => {
   return true;
 };
 
 // No-op: Leaving is now just disconnecting/removing presence
-export const leaveCohort = async (cohortId: string, userId: string): Promise<boolean> => {
+export const leaveCohort = async (_cohortId: string, _userId: string): Promise<boolean> => {
   return true;
 };
 
@@ -188,13 +198,50 @@ export const getCohortMembers = async (cohortId: string): Promise<CohortMember[]
 
 // --- Friend Services ---
 
-export const addFriend = async (userId: string, friendId: string) => {
+/**
+ * Search for users by username (case-insensitive partial match)
+ */
+export const searchUsersByUsername = async (searchTerm: string, currentUserId: string): Promise<UserProfile[]> => {
+  if (!searchTerm || searchTerm.length < 2) return [];
+  
+  // Firestore doesn't support case-insensitive search natively
+  // We'll do a range query and filter client-side for partial matches
+  const usersRef = collection(db, 'users');
+  const q = query(usersRef);
+  const querySnapshot = await getDocs(q);
+  
+  const searchLower = searchTerm.toLowerCase();
+  const results: UserProfile[] = [];
+  
+  querySnapshot.docs.forEach(docSnap => {
+    const data = docSnap.data() as UserProfile;
+    // Skip current user
+    if (data.id === currentUserId) return;
+    
+    // Case-insensitive partial match
+    if (data.username.toLowerCase().includes(searchLower)) {
+      results.push(data);
+    }
+  });
+  
+  return results.slice(0, 10); // Limit to 10 results
+};
+
+/**
+ * Add a friend to user's friends list
+ */
+export const addFriend = async (userId: string, friendId: string): Promise<boolean> => {
   // This updates the 'friends' array in the user document
-  // A more scalable approach uses a subcollection `users/{userId}/friends/{friendId}`
   
   // Fetch friend profile to store summary
   const friendProfile = await getUserProfile(friendId);
-  if (!friendProfile) return;
+  if (!friendProfile) return false;
+
+  // Check if already friends
+  const userProfile = await getUserProfile(userId);
+  if (userProfile?.friends?.some(f => f.id === friendId)) {
+    return false; // Already friends
+  }
 
   const friendSummary = {
     id: friendProfile.id,
@@ -209,4 +256,158 @@ export const addFriend = async (userId: string, friendId: string) => {
   await updateDoc(userRef, {
     friends: arrayUnion(friendSummary)
   });
+  
+  return true;
+};
+
+/**
+ * Remove a friend from user's friends list
+ */
+export const removeFriend = async (userId: string, friendId: string): Promise<boolean> => {
+  const userRef = doc(db, 'users', userId);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) return false;
+  
+  const userData = userDoc.data() as UserProfile;
+  const updatedFriends = userData.friends?.filter(f => f.id !== friendId) || [];
+  
+  await updateDoc(userRef, {
+    friends: updatedFriends
+  });
+  
+  return true;
+};
+
+// --- Activity History Services ---
+
+/**
+ * Add an activity entry to user's activity history
+ */
+export const addActivityEntry = async (
+  userId: string,
+  entry: Omit<ActivityEntry, 'id'>
+): Promise<void> => {
+  const userRef = doc(db, 'users', userId);
+  
+  const activityEntry: ActivityEntry = {
+    ...entry,
+    id: `activity-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+  };
+  
+  await updateDoc(userRef, {
+    activityHistory: arrayUnion(activityEntry)
+  });
+};
+
+/**
+ * Grant XP for solving a problem in a cohort room
+ */
+export const grantCohortSolveXP = async (
+  userId: string
+): Promise<{ xpGranted: number; newLevel?: number; updatedProfile: UserProfile | null }> => {
+  const userRef = doc(db, 'users', userId);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) {
+    return { xpGranted: 0, updatedProfile: null };
+  }
+  
+  const userData = userDoc.data() as UserProfile;
+  const xpGranted = calculateCohortSolveXP(userData.currentStreak);
+  const newTotalXP = userData.totalXP + xpGranted;
+  const newLevel = calculateLevel(newTotalXP);
+  const leveledUp = newLevel > userData.level;
+  
+  await updateDoc(userRef, {
+    totalXP: newTotalXP,
+    level: newLevel
+  });
+  
+  // Add activity entry
+  await addActivityEntry(userId, {
+    type: 'cohort-solve',
+    description: 'Solved a problem in cohort room',
+    date: new Date(),
+    icon: '✅',
+    meta: { xp: xpGranted }
+  });
+  
+  const updatedProfile = {
+    ...userData,
+    totalXP: newTotalXP,
+    level: newLevel
+  };
+  
+  return { 
+    xpGranted, 
+    newLevel: leveledUp ? newLevel : undefined,
+    updatedProfile
+  };
+};
+
+/**
+ * Grant XP for winning a battle in a cohort room
+ */
+export const grantBattleWinXP = async (
+  userId: string
+): Promise<{ xpGranted: number; newLevel?: number; updatedProfile: UserProfile | null }> => {
+  const userRef = doc(db, 'users', userId);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) {
+    return { xpGranted: 0, updatedProfile: null };
+  }
+  
+  const userData = userDoc.data() as UserProfile;
+  const xpGranted = calculateBattleWinXP(userData.currentStreak);
+  const newTotalXP = userData.totalXP + xpGranted;
+  const newLevel = calculateLevel(newTotalXP);
+  const leveledUp = newLevel > userData.level;
+  
+  await updateDoc(userRef, {
+    totalXP: newTotalXP,
+    level: newLevel
+  });
+  
+  // Add activity entry
+  await addActivityEntry(userId, {
+    type: 'cohort-battle',
+    description: 'Won a cohort battle',
+    date: new Date(),
+    icon: '⚔️',
+    meta: { xp: xpGranted }
+  });
+  
+  const updatedProfile = {
+    ...userData,
+    totalXP: newTotalXP,
+    level: newLevel
+  };
+  
+  return { 
+    xpGranted, 
+    newLevel: leveledUp ? newLevel : undefined,
+    updatedProfile
+  };
+};
+
+/**
+ * Get user's cohort statistics (for achievement checking)
+ */
+export const getUserCohortStats = async (userId: string): Promise<{ solves: number; battleWins: number }> => {
+  const userRef = doc(db, 'users', userId);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) {
+    return { solves: 0, battleWins: 0 };
+  }
+  
+  const userData = userDoc.data() as UserProfile;
+  
+  // Count from activity history
+  const solves = userData.activityHistory?.filter(a => a.type === 'cohort-solve').length || 0;
+  const battleWins = userData.activityHistory?.filter(a => a.type === 'cohort-battle').length || 0;
+  
+  return { solves, battleWins };
 };

@@ -19,22 +19,28 @@
 - **`XPProgressBar.tsx`**: XP progress bar component with level display
 - **`AchievementBadge.tsx`**: Achievement badge with tooltip
 - **`FriendCard.tsx`**: Friend card component with avatar, status, and activity
+- **`Whiteboard.tsx`**: Collaborative whiteboard with drawing tools and cursor nametags (with random colors per user)
 
 ### Page Components
 - **`AuthPage.tsx`**: Login and Sign-up page with toggleable forms
 - **`ArcadeHub.tsx`**: Game selection hub with game cards
-- **`LeaderboardPage.tsx`**: Leaderboard with filtering and stats
+- **`LeaderboardPage.tsx`**: Leaderboard with filtering and stats (all four games: Asteroids, Pac-Man, pH Invaders, Pong Arithmetic; "All Games" option removed)
 - **`ResultsPage.tsx`**: Game completion screen with viral loops
 - **`ProfilePage.tsx`**: Full user profile page with XP, achievements, quests, stats, activity, and settings
 - **`FriendProfilePage.tsx`**: Friend profile page (similar to user profile, without settings/quests)
 - **`CohortsPage.tsx`**: Main cohorts listing with Public/Friends tabs and search
 - **`CohortRoomPage.tsx`**: Collaborative room with Whiteboard, Battle Mode, Members, Voice, and AI Chat
 
+### Voice Chat Components
+- **`useVoiceChat.ts`**: Custom hook for WebRTC voice chat (microphone feature currently disabled)
+- **`VoiceChatControls.tsx`**: UI component for mute/deafen and volume controls
+- **`CohortMemberAvatars.tsx`**: Displays member avatars with green outline when speaking
+
 ### Game Components
 - **`AsteroidsGame.tsx`**: Asteroids: Synonym Shooter implementation
 - **`PacManMathGame.tsx`**: Pac-Man: Math Blitz implementation
 - **`PHInvadersGame.tsx`**: pH Invaders: Chemistry Challenge implementation
-- **`PongMathGame.tsx`**: Pong Math: Order of operations math game with classic Pong mechanics
+- **`PongArithmeticGame.tsx`**: Pong Arithmetic: Order of operations math game with classic Pong mechanics (renamed from Pong Math)
 - **`Whiteboard.tsx`**: Interactive drawing canvas with verify workflow
 - **`WhiteboardBattle.tsx`**: Minigame transforming drawings into enemies (Cooperative Defense)
 
@@ -65,14 +71,14 @@ const loop = (currentTime: number) => {
 ### Collision Detection
 - **Grid-based** (Pac-Man): Tile-based collision, check valid paths
 - **Geometric** (Asteroids, pH Invaders): Distance-based collision detection
-- **Rectangle-Circle** (Pong Math): Paddle-ball collision using bounding box and radius
+- **Rectangle-Circle** (Pong Arithmetic): Paddle-ball collision using bounding box and radius
 - **Line-Segment** (Whiteboard Battle): Precise intersection check between projectiles/player (circles) and enemy paths (line segments)
 
 ### AI Patterns
 - **Pac-Man Ghosts**: Intersection-based movement, individual targeting strategies, no-reverse rule
 - **Asteroids Enemies**: Simple chase/flee logic
 - **pH Invaders Enemies**: Formation-based movement, periodic shooting, side-to-side descent
-- **Pong Math AI**: Perfect tracking AI that always returns the ball (moves toward ball's y-position with speed limit)
+- **Pong Arithmetic AI**: Perfect tracking AI that always returns the ball (moves toward ball's y-position with speed limit)
 - **Whiteboard Battle Enemies**: Center-of-mass chase logic with scaling growth
 
 ## Design Principles
@@ -82,6 +88,16 @@ const loop = (currentTime: number) => {
 - **State Isolation**: Game state in refs, UI state in React state
 - **Responsive Design**: Games scale to container size
 - **Cooperative Defense**: Battle minigame emphasizes teamwork and creativity (drawings become content)
+
+### Voice Chat (Currently Disabled)
+- **WebRTC Architecture**: Peer-to-peer audio connections using RTCPeerConnection.
+- **Firebase Signaling**: WebRTC signaling (offers, answers, ICE candidates) exchanged via Firebase Realtime Database at `cohorts/{cohortId}/voice/signals/`.
+- **Speaking Detection**: Uses `AnalyserNode` with hysteresis (40 threshold to start, 25 to stop) and confirmation delays to prevent rapid toggling.
+- **Audio Processing**: Local mic stream processed through `GainNode` for volume control and `AnalyserNode` for speaking detection.
+- **Remote Audio**: Each remote stream has its own `AudioContext` and `GainNode` for individual volume control.
+- **State Management**: Mute/deafen state synced to Firebase at `cohorts/{cohortId}/voice/state/{userId}`.
+- **Speaking Indicators**: Speaking status broadcast to `cohorts/{cohortId}/voice/speaking/{userId}` and displayed with green outline on member avatars.
+- **Current Status**: Microphone feature is disabled - no mic access, buttons are no-ops. Code structure remains for future re-enablement.
 
 ### Multiplayer Whiteboard Battle (Firebase RTDB)
 - **Host-Based Architecture**: One client acts as the "host" (first member in sorted user ID list) and runs the authoritative game simulation. The host handles enemy AI, collisions, and win/loss conditions, syncing results to Firebase RTDB.
@@ -169,7 +185,7 @@ const loop = (currentTime: number) => {
    - pH maintenance (10-100 points/second based on proximity to pH 7)
 7. Game ends when all enemies defeated, timer expires, or lives reach 0
 
-### Educational Challenge Flow (Pong Math)
+### Educational Challenge Flow (Pong Arithmetic)
 1. Ball moves between player (left) and AI (right) paddles
 2. When ball hits AI paddle, it splits into 3 numbered balls
 3. Math problem (order of operations) appears at top of screen

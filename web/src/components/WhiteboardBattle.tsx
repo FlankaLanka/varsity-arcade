@@ -7,7 +7,7 @@ import { X } from 'lucide-react';
 
 interface WhiteboardBattleProps {
   drawings: WhiteboardDrawing[];
-  onBattleEnd: () => void;
+  onBattleEnd: (victory?: boolean) => void;
   onHealthUpdate?: (healths: Record<string, number>) => void;
   members: CohortMember[];
   currentUserId: string;
@@ -913,7 +913,7 @@ export default function WhiteboardBattle({
             {gameWon ? 'ALL ENEMIES DESTROYED' : 'YOUR TEAM FELL'}
           </p>
           <button 
-            onClick={onBattleEnd}
+            onClick={() => onBattleEnd(gameWon)}
             className="px-6 py-3 bg-neon-cyan hover:bg-neon-cyan/80 text-black font-bold rounded font-['Press_Start_2P'] transition-all"
           >
             RETURN TO WHITEBOARD

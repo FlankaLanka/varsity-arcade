@@ -13,6 +13,7 @@ import { FriendProfilePage } from './pages/FriendProfilePage';
 import CohortsPage from './pages/CohortsPage';
 import CohortRoomPage from './pages/CohortRoomPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { AchievementProvider } from './context/AchievementContext';
 import { AuthPage } from './pages/AuthPage';
 
 function AuthenticatedApp() {
@@ -47,7 +48,9 @@ function AuthenticatedApp() {
 function App() {
   return (
     <AuthProvider>
-      <AuthenticatedApp />
+      <AchievementProvider>
+        <AuthenticatedApp />
+      </AchievementProvider>
     </AuthProvider>
   );
 }

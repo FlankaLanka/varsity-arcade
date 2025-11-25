@@ -1,14 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { GameFrame } from '../components/GameFrame';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+import { useGameCompletion } from '../hooks/useGameCompletion';
 
 type Direction = 'up' | 'down' | 'left' | 'right';
-
-interface Tile {
-  x: number;
-  y: number;
-  isWall: boolean;
-}
 
 interface Pellet {
   x: number;
@@ -25,18 +20,16 @@ interface PowerPellet {
 }
 
 interface Ghost {
-  x: number;              // Grid position
-  y: number;              // Grid position
-  pixelX: number;         // Pixel position
-  pixelY: number;         // Pixel position
+  x: number;
+  y: number;
   direction: Direction;
-  nextDirection: Direction | null;
   color: string;
-  name: string;
+  name: 'blinky' | 'pinky' | 'inky' | 'clyde';
   vulnerable: boolean;
   eaten: boolean;
   respawnTimer: number;
-  directionChangeTimer: number; // Timer to prevent direction changes every frame
+  scatterTarget: { x: number; y: number };
+  moveTimer: number;
 }
 
 interface MathProblem {
@@ -45,7 +38,6 @@ interface MathProblem {
   wrongAnswers: number[];
 }
 
-// Math Problems Pool
 const MATH_PROBLEMS: MathProblem[] = [
   { equation: "5 + _ = 10", answer: 5, wrongAnswers: [3, 7, 9] },
   { equation: "12 - _ = 7", answer: 5, wrongAnswers: [3, 6, 8] },
@@ -53,1109 +45,876 @@ const MATH_PROBLEMS: MathProblem[] = [
   { equation: "20 - _ = 12", answer: 8, wrongAnswers: [6, 10, 14] },
   { equation: "3 × _ = 15", answer: 5, wrongAnswers: [3, 7, 9] },
   { equation: "18 ÷ _ = 6", answer: 3, wrongAnswers: [2, 4, 5] },
-  { equation: "7 + _ = 14", answer: 7, wrongAnswers: [5, 9, 11] },
-  { equation: "25 - _ = 18", answer: 7, wrongAnswers: [5, 9, 11] },
-  { equation: "4 × _ = 20", answer: 5, wrongAnswers: [3, 6, 8] },
-  { equation: "16 ÷ _ = 4", answer: 4, wrongAnswers: [2, 3, 5] },
 ];
 
-// Simple maze layout (1 = wall, 0 = path, 2 = power pellet spot)
 const MAZE_LAYOUT = [
   "1111111111111111111111111111",
-  "1000000000110000000000000001",
-  "1011110111011011101111011101",
+  "1000000000001100000000000001",
+  "1011110111101101111011110101",
   "1000000000000000000000000001",
   "1011011110111110111101101101",
   "1000000000100010000000000001",
   "1111011110101010111101111111",
-  "0000010000000000000010000000",
-  "1111011011111111101101101111",
+  "0000000000000000000000000000",
+  "1111011011111111101101111111",
   "1000000000000000000000000001",
   "1011011110111110111101101101",
   "1000000000100010000000000001",
   "1111011110101010111101111111",
-  "0000010000000000000010000000",
-  "1111011011111111101101101111",
+  "0000000000000000000000000000",
+  "1111011011111111101101111111",
   "1000000000000000000000000001",
   "1011011110111110111101101101",
   "1000000000100010000000000001",
   "1111011110101010111101111111",
-  "0000010000000000000010000000",
-  "1111011011111111101101101111",
+  "0000000000000000000000000000",
+  "1111011011111111101101111111",
   "1000000000000000000000000001",
-  "1000000000110000000000000001",
+  "1000000000001100000000000001",
   "1111111111111111111111111111",
 ];
 
-const TILE_SIZE = 20;
+const TILE_SIZE = 16;
 const MAZE_WIDTH = MAZE_LAYOUT[0].length;
 const MAZE_HEIGHT = MAZE_LAYOUT.length;
-const CANVAS_WIDTH = MAZE_WIDTH * TILE_SIZE;
-const CANVAS_HEIGHT = MAZE_HEIGHT * TILE_SIZE;
+
+// UI heights
+const TOP_UI_HEIGHT = 40;
+const BOTTOM_UI_HEIGHT = 30;
+
+const findValidPositions = (minX: number, maxX: number, minY: number, maxY: number): {x: number, y: number}[] => {
+  const positions: {x: number, y: number}[] = [];
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      if (MAZE_LAYOUT[y]?.[x] === '0') {
+        positions.push({ x, y });
+      }
+    }
+  }
+  return positions;
+};
 
 export const PacManMathGame = () => {
+  const navigate = useNavigate();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [gameOver, setGameOver] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(60);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState(90);
   const [currentProblem, setCurrentProblem] = useState<MathProblem>(MATH_PROBLEMS[0]);
   const [isSupercharged, setIsSupercharged] = useState(false);
   
-  // Scatter mode targets (corners of our map)
-  const SCATTER_TARGETS = {
-    blinky: { x: 26, y: 1 },   // Top-right
-    pinky: { x: 1, y: 1 },     // Top-left
-    inky: { x: 26, y: 22 },    // Bottom-right
-    clyde: { x: 1, y: 22 },    // Bottom-left
-  };
+  const gameStateRef = useRef<{
+    player: { x: number; y: number; direction: Direction; nextDirection: Direction | null; supercharged: boolean; superchargedTimer: number; mouthAngle: number; invincible: boolean; invincibleTimer: number; moveTimer: number };
+    pellets: Pellet[];
+    powerPellets: PowerPellet[];
+    ghosts: Ghost[];
+    keys: { w: boolean; a: boolean; s: boolean; d: boolean };
+    score: number;
+    lives: number;
+    timeRemaining: number;
+    active: boolean;
+    ghostEatCount: number;
+    currentProblem: MathProblem;
+    scatterMode: boolean;
+    modeTimer: number;
+    penaltyMode: boolean;
+    penaltyTimer: number;
+  } | null>(null);
   
-  const gameState = useRef({
-    player: {
-      x: 12,
-      y: 17,
-      gridX: 12,
-      gridY: 17,
-      pixelX: 12 * TILE_SIZE + TILE_SIZE / 2,
-      pixelY: 17 * TILE_SIZE + TILE_SIZE / 2,
-      direction: 'right' as Direction,
-      nextDirection: null as Direction | null,
-      supercharged: false,
-      superchargedTimer: 0,
-      mouthAngle: 0,
-      invincible: false,
-      invincibleTimer: 0,
-      justDied: false,
-    },
-    pellets: [] as Pellet[],
-    powerPellets: [] as PowerPellet[],
-    ghosts: [] as Ghost[],
-    keys: { w: false, a: false, s: false, d: false },
-    score: 0,
-    lives: 3,
-    timeRemaining: 60,
-    active: true,
-    ghostEatCount: 0,
-    ghostPenalty: false,
-    ghostPenaltyTimer: 0,
-  });
+  const animationIdRef = useRef<number | null>(null);
 
-  const navigate = useNavigate();
+  const { completeGame } = useGameCompletion({ gameType: 'pacman-math', gameName: 'Pac-Man: Math Blitz' });
 
-  // Find random valid position in a quadrant (checks maze layout directly)
-  const findRandomPositionInQuadrant = (
-    minX: number, maxX: number,
-    minY: number, maxY: number,
-    excludePositions: { x: number; y: number }[] = []
-  ): { x: number; y: number } | null => {
-    const validPositions: { x: number; y: number }[] = [];
-    
-    for (let y = minY; y <= maxY && y < MAZE_HEIGHT; y++) {
-      for (let x = minX; x <= maxX && x < MAZE_WIDTH; x++) {
-        // Check if it's a valid path (not a wall)
-        if (MAZE_LAYOUT[y] && MAZE_LAYOUT[y][x] === '0') {
-          // Check if not in exclude list
-          const isExcluded = excludePositions.some(pos => pos.x === x && pos.y === y);
-          if (!isExcluded) {
-            validPositions.push({ x, y });
-          }
-        }
-      }
-    }
-    
-    if (validPositions.length === 0) return null;
-    return validPositions[Math.floor(Math.random() * validPositions.length)];
-  };
-
-  const initializeMaze = () => {
-    const pellets: Pellet[] = [];
-    const powerPellets: PowerPellet[] = [];
-    
-    // Generate pellets and power pellet spots
-    for (let y = 0; y < MAZE_HEIGHT; y++) {
-      for (let x = 0; x < MAZE_WIDTH; x++) {
-        if (MAZE_LAYOUT[y][x] === '0') {
-          // Regular pellet
-          pellets.push({ x, y, collected: false });
-        } else if (MAZE_LAYOUT[y][x] === '2') {
-          // Power pellet spot (we'll place them manually at key locations)
-        }
-      }
-    }
-    
-    // Place power pellets randomly in each quadrant
+  const generatePowerPellets = useCallback((problem: MathProblem): PowerPellet[] => {
     const midX = Math.floor(MAZE_WIDTH / 2);
     const midY = Math.floor(MAZE_HEIGHT / 2);
     
     const quadrants = [
-      { minX: 1, maxX: midX - 1, minY: 1, maxY: midY - 1 },      // Top-left
-      { minX: midX + 1, maxX: MAZE_WIDTH - 2, minY: 1, maxY: midY - 1 }, // Top-right
-      { minX: 1, maxX: midX - 1, minY: midY + 1, maxY: MAZE_HEIGHT - 2 }, // Bottom-left
-      { minX: midX + 1, maxX: MAZE_WIDTH - 2, minY: midY + 1, maxY: MAZE_HEIGHT - 2 }, // Bottom-right
+      { minX: 1, maxX: midX - 2, minY: 1, maxY: midY - 2 },
+      { minX: midX + 2, maxX: MAZE_WIDTH - 2, minY: 1, maxY: midY - 2 },
+      { minX: 1, maxX: midX - 2, minY: midY + 2, maxY: MAZE_HEIGHT - 2 },
+      { minX: midX + 2, maxX: MAZE_WIDTH - 2, minY: midY + 2, maxY: MAZE_HEIGHT - 2 },
     ];
     
-    const problem = MATH_PROBLEMS[Math.floor(Math.random() * MATH_PROBLEMS.length)];
     const allAnswers = [problem.answer, ...problem.wrongAnswers].sort(() => Math.random() - 0.5);
+    const powerPellets: PowerPellet[] = [];
     
-    const powerPelletSpots: { x: number; y: number }[] = [];
-    quadrants.forEach(quad => {
-      const spot = findRandomPositionInQuadrant(quad.minX, quad.maxX, quad.minY, quad.maxY, powerPelletSpots);
-      if (spot) {
-        powerPelletSpots.push(spot);
+    quadrants.forEach((quad, i) => {
+      const validPositions = findValidPositions(quad.minX, quad.maxX, quad.minY, quad.maxY);
+      if (validPositions.length > 0) {
+        const pos = validPositions[Math.floor(Math.random() * validPositions.length)];
+        powerPellets.push({
+          x: pos.x,
+          y: pos.y,
+          number: allAnswers[i % allAnswers.length],
+          isCorrect: allAnswers[i % allAnswers.length] === problem.answer,
+          collected: false,
+        });
       }
     });
     
-    // Ensure we have 4 spots (fallback to corners if needed)
-    while (powerPelletSpots.length < 4) {
-      const fallbackSpots = [
-        { x: 1, y: 1 }, { x: 26, y: 1 },
-        { x: 1, y: 22 }, { x: 26, y: 22 },
-      ];
-      const fallback = fallbackSpots[powerPelletSpots.length];
-      if (!powerPelletSpots.some(p => p.x === fallback.x && p.y === fallback.y)) {
-        powerPelletSpots.push(fallback);
-      } else {
-        break;
-      }
-    }
-    
-    powerPelletSpots.forEach((spot, index) => {
-      powerPellets.push({
-        x: spot.x,
-        y: spot.y,
-        number: allAnswers[index % allAnswers.length],
-        isCorrect: allAnswers[index % allAnswers.length] === problem.answer,
-        collected: false,
-      });
-    });
-    
-    gameState.current.pellets = pellets;
-    gameState.current.powerPellets = powerPellets;
+    return powerPellets;
+  }, []);
+
+  const startGame = useCallback(() => {
+    const problem = MATH_PROBLEMS[Math.floor(Math.random() * MATH_PROBLEMS.length)];
     setCurrentProblem(problem);
-  };
+    
+    const pellets: Pellet[] = [];
+    for (let y = 0; y < MAZE_HEIGHT; y++) {
+      for (let x = 0; x < MAZE_WIDTH; x++) {
+        if (MAZE_LAYOUT[y][x] === '0') {
+          pellets.push({ x, y, collected: false });
+        }
+      }
+    }
 
-  const initializeGhosts = () => {
-    const centerX = 13;
-    const centerY = 11;
-    gameState.current.ghosts = [
-      { 
-        x: centerX, y: centerY, 
-        pixelX: centerX * TILE_SIZE + TILE_SIZE / 2,
-        pixelY: centerY * TILE_SIZE + TILE_SIZE / 2,
-        direction: 'left', nextDirection: null,
-        color: '#ff69b4', name: 'Blinky', // Pink
-        vulnerable: false, eaten: false, respawnTimer: 0,
-        directionChangeTimer: 0
-      },
-      { 
-        x: centerX + 1, y: centerY,
-        pixelX: (centerX + 1) * TILE_SIZE + TILE_SIZE / 2,
-        pixelY: centerY * TILE_SIZE + TILE_SIZE / 2,
-        direction: 'up', nextDirection: null,
-        color: '#ff8c00', name: 'Pinky', // Orange
-        vulnerable: false, eaten: false, respawnTimer: 0,
-        directionChangeTimer: 0
-      },
-      { 
-        x: centerX, y: centerY + 1,
-        pixelX: centerX * TILE_SIZE + TILE_SIZE / 2,
-        pixelY: (centerY + 1) * TILE_SIZE + TILE_SIZE / 2,
-        direction: 'right', nextDirection: null,
-        color: '#00ffff', name: 'Inky', // Cyan
-        vulnerable: false, eaten: false, respawnTimer: 0,
-        directionChangeTimer: 0
-      },
-      { 
-        x: centerX + 1, y: centerY + 1,
-        pixelX: (centerX + 1) * TILE_SIZE + TILE_SIZE / 2,
-        pixelY: (centerY + 1) * TILE_SIZE + TILE_SIZE / 2,
-        direction: 'down', nextDirection: null,
-        color: '#00ff00', name: 'Clyde', // Green
-        vulnerable: false, eaten: false, respawnTimer: 0,
-        directionChangeTimer: 0
-      },
+    const powerPellets = generatePowerPellets(problem);
+
+    const ghosts: Ghost[] = [
+      { x: 13, y: 9, direction: 'left', color: '#ff0000', name: 'blinky', vulnerable: false, eaten: false, respawnTimer: 0, scatterTarget: { x: MAZE_WIDTH - 3, y: 0 }, moveTimer: 0 },
+      { x: 14, y: 9, direction: 'up', color: '#ffb8ff', name: 'pinky', vulnerable: false, eaten: false, respawnTimer: 0, scatterTarget: { x: 2, y: 0 }, moveTimer: 12 },
+      { x: 13, y: 11, direction: 'right', color: '#00ffff', name: 'inky', vulnerable: false, eaten: false, respawnTimer: 0, scatterTarget: { x: MAZE_WIDTH - 1, y: MAZE_HEIGHT - 1 }, moveTimer: 24 },
+      { x: 14, y: 11, direction: 'down', color: '#ffb852', name: 'clyde', vulnerable: false, eaten: false, respawnTimer: 0, scatterTarget: { x: 0, y: MAZE_HEIGHT - 1 }, moveTimer: 36 },
     ];
-  };
 
-  const canMove = (x: number, y: number): boolean => {
-    if (x < 0 || x >= MAZE_WIDTH || y < 0 || y >= MAZE_HEIGHT) {
-      // Wrap around
-      return true;
-    }
-    return MAZE_LAYOUT[y][x] !== '1';
-  };
-
-  const getNextDirection = (x: number, y: number, dir: Direction): { x: number; y: number } | null => {
-    let nextX = x;
-    let nextY = y;
+    gameStateRef.current = {
+      player: {
+        x: 14, y: 17,
+        direction: 'left',
+        nextDirection: null,
+        supercharged: false,
+        superchargedTimer: 0,
+        mouthAngle: 0,
+        invincible: false,
+        invincibleTimer: 0,
+        moveTimer: 0,
+      },
+      pellets,
+      powerPellets,
+      ghosts,
+      keys: { w: false, a: false, s: false, d: false },
+      score: 0,
+      lives: 3,
+      timeRemaining: 90,
+      active: true,
+      ghostEatCount: 0,
+      currentProblem: problem,
+      scatterMode: true,
+      modeTimer: 7 * 60,
+      penaltyMode: false,
+      penaltyTimer: 0,
+    };
     
-    switch (dir) {
-      case 'up': nextY--; break;
-      case 'down': nextY++; break;
-      case 'left': nextX--; break;
-      case 'right': nextX++; break;
-    }
-    
-    // Wrap around
-    if (nextX < 0) nextX = MAZE_WIDTH - 1;
-    if (nextX >= MAZE_WIDTH) nextX = 0;
-    
-    if (canMove(nextX, nextY)) {
-      return { x: nextX, y: nextY };
-    }
-    return null;
-  };
-
-  // Get reverse direction (for no-reverse rule)
-  const getReverseDirection = (dir: Direction): Direction => {
-    switch (dir) {
-      case 'up': return 'down';
-      case 'down': return 'up';
-      case 'left': return 'right';
-      case 'right': return 'left';
-    }
-  };
-
-  // Check if position is an intersection (has 2+ valid directions, excluding current)
-  const isIntersection = (x: number, y: number, currentDir: Direction): boolean => {
-    let validDirs = 0;
-    const directions: Direction[] = ['up', 'down', 'left', 'right'];
-    directions.forEach(dir => {
-      if (dir !== currentDir && getNextDirection(x, y, dir) !== null) {
-        validDirs++;
-      }
-    });
-    return validDirs >= 1; // At least one alternative direction
-  };
-
-  // Get valid directions at a position (excluding reverse)
-  const getValidDirections = (x: number, y: number, currentDir: Direction): Direction[] => {
-    const directions: Direction[] = ['up', 'down', 'left', 'right'];
-    const reverse = getReverseDirection(currentDir);
-    return directions.filter(dir => {
-      if (dir === reverse) return false; // No reverse
-      return getNextDirection(x, y, dir) !== null;
-    });
-  };
-
-  // Calculate Manhattan distance
-  const manhattanDistance = (x1: number, y1: number, x2: number, y2: number): number => {
-    return Math.abs(x1 - x2) + Math.abs(y1 - y2);
-  };
-
-  // Get ghost target based on personality (original Pac-Man AI)
-  const getGhostTarget = (ghost: Ghost, player: typeof gameState.current.player, blinky?: Ghost): { x: number; y: number } => {
-    // Scatter mode (for now, we'll use chase mode, but can add scatter later)
-    const scatterMode = false; // Can toggle this for scatter/chase cycles
-    
-    if (scatterMode) {
-      // Return scatter target based on ghost name
-      switch (ghost.name) {
-        case 'Blinky': return SCATTER_TARGETS.blinky;
-        case 'Pinky': return SCATTER_TARGETS.pinky;
-        case 'Inky': return SCATTER_TARGETS.inky;
-        case 'Clyde': return SCATTER_TARGETS.clyde;
-      }
-    }
-
-    // Chase mode - individual targeting
-    switch (ghost.name) {
-      case 'Blinky': // Direct chase
-        return { x: player.gridX, y: player.gridY };
-      
-      case 'Pinky': // 4 tiles ahead
-        let aheadX = player.gridX;
-        let aheadY = player.gridY;
-        switch (player.direction) {
-          case 'up': aheadY -= 4; break;
-          case 'down': aheadY += 4; break;
-          case 'left': aheadX -= 4; break;
-          case 'right': aheadX += 4; break;
-        }
-        // Wrap around
-        if (aheadX < 0) aheadX = MAZE_WIDTH - 1;
-        if (aheadX >= MAZE_WIDTH) aheadX = 0;
-        return { x: aheadX, y: aheadY };
-      
-      case 'Inky': // Complex: 2 tiles ahead, then double vector from Blinky
-        let twoAheadX = player.gridX;
-        let twoAheadY = player.gridY;
-        switch (player.direction) {
-          case 'up': twoAheadY -= 2; break;
-          case 'down': twoAheadY += 2; break;
-          case 'left': twoAheadX -= 2; break;
-          case 'right': twoAheadX += 2; break;
-        }
-        // Wrap around
-        if (twoAheadX < 0) twoAheadX = MAZE_WIDTH - 1;
-        if (twoAheadX >= MAZE_WIDTH) twoAheadX = 0;
-        
-        if (blinky) {
-          // Double the vector from Blinky to 2-tiles-ahead point
-          const vecX = twoAheadX - blinky.x;
-          const vecY = twoAheadY - blinky.y;
-          return { x: blinky.x + vecX * 2, y: blinky.y + vecY * 2 };
-        }
-        return { x: twoAheadX, y: twoAheadY };
-      
-      case 'Clyde': // Conditional: chase if far, scatter if close
-        const dist = manhattanDistance(ghost.x, ghost.y, player.gridX, player.gridY);
-        if (dist > 8) {
-          return { x: player.gridX, y: player.gridY }; // Chase
-        } else {
-          return SCATTER_TARGETS.clyde; // Scatter
-        }
-      
-      default:
-        return { x: player.gridX, y: player.gridY };
-    }
-  };
-
-  // Choose best direction with priority system (Up > Left > Down > Right)
-  const chooseBestDirection = (
-    ghost: Ghost,
-    target: { x: number; y: number },
-    validDirs: Direction[]
-  ): Direction => {
-    if (validDirs.length === 0) return ghost.direction;
-    if (validDirs.length === 1) return validDirs[0];
-
-    // Calculate distance to target for each direction
-    const dirDistances: { dir: Direction; dist: number }[] = [];
-    validDirs.forEach(dir => {
-      const next = getNextDirection(ghost.x, ghost.y, dir);
-      if (next) {
-        const dist = manhattanDistance(next.x, next.y, target.x, target.y);
-        dirDistances.push({ dir, dist });
-      }
-    });
-
-    // Find minimum distance
-    const minDist = Math.min(...dirDistances.map(d => d.dist));
-    const bestDirs = dirDistances.filter(d => d.dist === minDist).map(d => d.dir);
-
-    // Priority: Up > Left > Down > Right
-    const priority: Direction[] = ['up', 'left', 'down', 'right'];
-    for (const dir of priority) {
-      if (bestDirs.includes(dir)) {
-        return dir;
-      }
-    }
-
-    return bestDirs[0]; // Fallback
-  };
+    setScore(0);
+    setLives(3);
+    setGameOver(false);
+    setTimeRemaining(90);
+    setIsSupercharged(false);
+    setGameStarted(true);
+  }, [generatePowerPellets]);
 
   useEffect(() => {
+    return () => {
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!gameStarted || gameOver || !gameStateRef.current) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    canvas.width = CANVAS_WIDTH;
-    canvas.height = CANVAS_HEIGHT;
-
+    canvas.width = MAZE_WIDTH * TILE_SIZE;
+    canvas.height = MAZE_HEIGHT * TILE_SIZE;
     canvas.tabIndex = 0;
     canvas.style.outline = 'none';
 
-    let isFocused = false;
-
-    const handleFocus = () => {
-      isFocused = true;
-      canvas.style.cursor = 'none';
-    };
-
-    const handleBlur = () => {
-      isFocused = false;
-      canvas.style.cursor = 'default';
-    };
+    const gameState = gameStateRef.current;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isFocused) return;
       const key = e.key.toLowerCase();
-      if (key === 'w') gameState.current.keys.w = true;
-      if (key === 'a') gameState.current.keys.a = true;
-      if (key === 's') gameState.current.keys.s = true;
-      if (key === 'd') gameState.current.keys.d = true;
+      if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+        e.preventDefault();
+      }
+      if (key === 'w' || key === 'arrowup') gameState.keys.w = true;
+      if (key === 'a' || key === 'arrowleft') gameState.keys.a = true;
+      if (key === 's' || key === 'arrowdown') gameState.keys.s = true;
+      if (key === 'd' || key === 'arrowright') gameState.keys.d = true;
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (!isFocused) return;
       const key = e.key.toLowerCase();
-      if (key === 'w') gameState.current.keys.w = false;
-      if (key === 'a') gameState.current.keys.a = false;
-      if (key === 's') gameState.current.keys.s = false;
-      if (key === 'd') gameState.current.keys.d = false;
+      if (key === 'w' || key === 'arrowup') gameState.keys.w = false;
+      if (key === 'a' || key === 'arrowleft') gameState.keys.a = false;
+      if (key === 's' || key === 'arrowdown') gameState.keys.s = false;
+      if (key === 'd' || key === 'arrowright') gameState.keys.d = false;
     };
 
-    const handleCanvasClick = () => {
-      canvas.focus();
-    };
-
-    initializeMaze();
-    initializeGhosts();
-
-    canvas.addEventListener('focus', handleFocus);
-    canvas.addEventListener('blur', handleBlur);
-    canvas.addEventListener('click', handleCanvasClick);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
-    let animationId: number;
-    let lastTime = 0;
-    const PLAYER_SPEED = 2; // pixels per frame
-    const GHOST_SPEED = 1.5; // pixels per frame (slightly slower than player)
-
-    const loop = (time: number) => {
-      const dt = (time - lastTime) / 16.66;
-      lastTime = time;
-
-      if (!gameState.current.active) return;
-
-      update(dt, canvas);
-      draw(ctx, canvas);
-      
-      animationId = requestAnimationFrame(loop);
+    // Check if a tile is walkable
+    const isWalkable = (x: number, y: number): boolean => {
+      // Handle wrapping for tunnel rows
+      if (y >= 0 && y < MAZE_HEIGHT && (x < 0 || x >= MAZE_WIDTH)) {
+        return MAZE_LAYOUT[y][0] === '0' || MAZE_LAYOUT[y][MAZE_WIDTH - 1] === '0';
+      }
+      if (x < 0 || x >= MAZE_WIDTH || y < 0 || y >= MAZE_HEIGHT) return false;
+      return MAZE_LAYOUT[y][x] === '0';
     };
 
-    const update = (dt: number, canvas: HTMLCanvasElement) => {
-      const state = gameState.current;
-      const { player, keys } = state;
+    const getNextTile = (x: number, y: number, dir: Direction): { x: number; y: number } | null => {
+      let nx = x, ny = y;
+      switch (dir) {
+        case 'up': ny--; break;
+        case 'down': ny++; break;
+        case 'left': nx--; break;
+        case 'right': nx++; break;
+      }
+      // Handle tunnel wrapping - instant teleport
+      if (nx < 0) nx = MAZE_WIDTH - 1;
+      if (nx >= MAZE_WIDTH) nx = 0;
+      
+      return isWalkable(nx, ny) ? { x: nx, y: ny } : null;
+    };
 
-      // Handle player input - queue direction change
-      if (keys.w && player.nextDirection !== 'up') player.nextDirection = 'up';
-      if (keys.a && player.nextDirection !== 'left') player.nextDirection = 'left';
-      if (keys.s && player.nextDirection !== 'down') player.nextDirection = 'down';
-      if (keys.d && player.nextDirection !== 'right') player.nextDirection = 'right';
+    const getOpposite = (dir: Direction): Direction => {
+      switch (dir) { case 'up': return 'down'; case 'down': return 'up'; case 'left': return 'right'; case 'right': return 'left'; }
+    };
 
-      // Check if at tile center to allow direction change
-      const playerAtCenter = Math.abs(player.pixelX - (player.gridX * TILE_SIZE + TILE_SIZE / 2)) < 1 &&
-                             Math.abs(player.pixelY - (player.gridY * TILE_SIZE + TILE_SIZE / 2)) < 1;
+    const distance = (x1: number, y1: number, x2: number, y2: number): number => {
+      return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    };
 
-      // Try to change direction when at center
-      if (player.nextDirection && playerAtCenter) {
-        const next = getNextDirection(player.gridX, player.gridY, player.nextDirection);
+    // Get available directions from a tile (excluding reverse)
+    const getAvailableDirections = (x: number, y: number, currentDir: Direction): Direction[] => {
+      const dirs: Direction[] = ['up', 'left', 'down', 'right'];
+      const opposite = getOpposite(currentDir);
+      const available: Direction[] = [];
+      
+      for (const dir of dirs) {
+        if (dir === opposite) continue;
+        const next = getNextTile(x, y, dir);
+        if (next) available.push(dir);
+      }
+      
+      // If no directions available (dead end), allow reverse
+      if (available.length === 0) {
+        const next = getNextTile(x, y, opposite);
+        if (next) available.push(opposite);
+      }
+      
+      return available;
+    };
+
+    // Classic Pac-Man ghost AI
+    const getGhostTarget = (ghost: Ghost, player: typeof gameState.player, blinky: Ghost): { x: number; y: number } => {
+      if (gameState.scatterMode && !player.supercharged) {
+        return ghost.scatterTarget;
+      }
+      
+      if (ghost.vulnerable) {
+        // Random movement when vulnerable
+        return { 
+          x: Math.floor(Math.random() * MAZE_WIDTH), 
+          y: Math.floor(Math.random() * MAZE_HEIGHT) 
+        };
+      }
+
+      switch (ghost.name) {
+        case 'blinky':
+          return { x: player.x, y: player.y };
+        
+        case 'pinky': {
+          let px = player.x, py = player.y;
+          switch (player.direction) {
+            case 'up': py -= 4; px -= 4; break;
+            case 'down': py += 4; break;
+            case 'left': px -= 4; break;
+            case 'right': px += 4; break;
+          }
+          return { x: Math.max(0, Math.min(MAZE_WIDTH - 1, px)), y: Math.max(0, Math.min(MAZE_HEIGHT - 1, py)) };
+        }
+        
+        case 'inky': {
+          let ix = player.x, iy = player.y;
+          switch (player.direction) {
+            case 'up': iy -= 2; break;
+            case 'down': iy += 2; break;
+            case 'left': ix -= 2; break;
+            case 'right': ix += 2; break;
+          }
+          return {
+            x: Math.max(0, Math.min(MAZE_WIDTH - 1, ix + (ix - blinky.x))),
+            y: Math.max(0, Math.min(MAZE_HEIGHT - 1, iy + (iy - blinky.y)))
+          };
+        }
+        
+        case 'clyde': {
+          const dist = distance(ghost.x, ghost.y, player.x, player.y);
+          if (dist > 8) {
+            return { x: player.x, y: player.y };
+          }
+          return ghost.scatterTarget;
+        }
+        
+        default:
+          return { x: player.x, y: player.y };
+      }
+    };
+
+    const chooseGhostDirection = (ghost: Ghost, target: { x: number; y: number }): Direction => {
+      const available = getAvailableDirections(ghost.x, ghost.y, ghost.direction);
+      
+      if (available.length === 0) {
+        return ghost.direction; // Shouldn't happen, but fallback
+      }
+      
+      if (available.length === 1) {
+        return available[0];
+      }
+      
+      // Choose direction that gets closest to target
+      let bestDir = available[0];
+      let bestDist = Infinity;
+      
+      for (const dir of available) {
+        const next = getNextTile(ghost.x, ghost.y, dir);
         if (next) {
-          player.direction = player.nextDirection;
-          player.nextDirection = null;
+          const dist = distance(next.x, next.y, target.x, target.y);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestDir = dir;
+          }
+        }
+      }
+      
+      return bestDir;
+    };
+
+    const PLAYER_MOVE_DELAY = 12; // Frames between moves (0.5x slower)
+    const GHOST_MOVE_DELAY = 15; // 0.5x slower
+    const GHOST_VULNERABLE_DELAY = 24; // 0.5x slower
+    let lastTime = performance.now();
+
+    const endGame = () => {
+      gameState.active = false;
+      setGameOver(true);
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+        animationIdRef.current = null;
+      }
+    };
+
+    const drawGhost = (x: number, y: number, color: string, vulnerable: boolean, flashing: boolean, penaltyMode: boolean) => {
+      const centerX = x * TILE_SIZE + TILE_SIZE / 2;
+      const centerY = y * TILE_SIZE + TILE_SIZE / 2;
+      const size = TILE_SIZE - 2;
+      const radius = size / 2;
+      
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      
+      let bodyColor = color;
+      if (vulnerable) {
+        bodyColor = flashing ? '#ffffff' : '#0000ff';
+      } else if (penaltyMode) {
+        // During penalty mode, ghosts are red
+        bodyColor = '#ff0000';
+      }
+      ctx.fillStyle = bodyColor;
+      
+      // Ghost body
+      ctx.beginPath();
+      ctx.arc(0, -radius * 0.15, radius * 0.85, Math.PI, 0, false);
+      ctx.lineTo(radius * 0.85, radius * 0.45);
+      
+      const waves = 3;
+      const waveWidth = (radius * 1.7) / (waves * 2);
+      for (let i = 0; i <= waves * 2; i++) {
+        const wx = radius * 0.85 - (i * waveWidth);
+        const wy = radius * 0.45 + (i % 2 === 0 ? 0 : radius * 0.25);
+        ctx.lineTo(wx, wy);
+      }
+      ctx.closePath();
+      ctx.fill();
+      
+      // Eyes
+      if (!vulnerable || flashing) {
+        const eyeSize = size * 0.2;
+        const eyeSpacing = size * 0.22;
+        const eyeY = -size * 0.08;
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(-eyeSpacing, eyeY, eyeSize * 0.7, eyeSize, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(eyeSpacing, eyeY, eyeSize * 0.7, eyeSize, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.fillStyle = '#0000cc';
+        const pupilSize = eyeSize * 0.45;
+        ctx.beginPath();
+        ctx.arc(-eyeSpacing + 1, eyeY + 1, pupilSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(eyeSpacing + 1, eyeY + 1, pupilSize, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Scared face
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-radius * 0.4, radius * 0.15);
+        for (let i = 0; i < 4; i++) {
+          ctx.lineTo(-radius * 0.4 + (i + 0.5) * radius * 0.2, radius * 0.15 + (i % 2 === 0 ? 2 : -2));
+        }
+        ctx.stroke();
+      }
+      
+      ctx.restore();
+    };
+
+    const loop = (time: number) => {
+      if (!gameState.active) return;
+
+      const dt = Math.min((time - lastTime) / 16.66, 3);
+      lastTime = time;
+
+      const { player, keys } = gameState;
+
+      // Update penalty timer
+      if (gameState.penaltyMode) {
+        gameState.penaltyTimer -= dt;
+        if (gameState.penaltyTimer <= 0) {
+          gameState.penaltyMode = false;
+          gameState.penaltyTimer = 0;
         }
       }
 
-      // Check for wrap-around first (before movement)
-      if (player.gridX === 0 && player.direction === 'left' && player.pixelX <= TILE_SIZE / 2) {
-        // Instant teleport to right side
-        player.gridX = MAZE_WIDTH - 1;
-        player.pixelX = (MAZE_WIDTH - 1) * TILE_SIZE + TILE_SIZE / 2;
-      } else if (player.gridX === MAZE_WIDTH - 1 && player.direction === 'right' && player.pixelX >= (MAZE_WIDTH - 1) * TILE_SIZE + TILE_SIZE / 2) {
-        // Instant teleport to left side
-        player.gridX = 0;
-        player.pixelX = TILE_SIZE / 2;
-      } else {
-        // Normal movement
-        const next = getNextDirection(player.gridX, player.gridY, player.direction);
-        if (next) {
-          const targetPixelX = next.x * TILE_SIZE + TILE_SIZE / 2;
-          const targetPixelY = next.y * TILE_SIZE + TILE_SIZE / 2;
-          
-          const dx = targetPixelX - player.pixelX;
-          const dy = targetPixelY - player.pixelY;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          
-          if (dist > PLAYER_SPEED) {
-            player.pixelX += (dx / dist) * PLAYER_SPEED;
-            player.pixelY += (dy / dist) * PLAYER_SPEED;
+      // Update scatter/chase mode timer
+      if (!player.supercharged) {
+        gameState.modeTimer -= dt;
+        if (gameState.modeTimer <= 0) {
+          gameState.scatterMode = !gameState.scatterMode;
+          gameState.modeTimer = gameState.scatterMode ? 7 * 60 : 20 * 60;
+        }
+      }
+
+      // Handle input - queue next direction
+      if (keys.w) player.nextDirection = 'up';
+      if (keys.a) player.nextDirection = 'left';
+      if (keys.s) player.nextDirection = 'down';
+      if (keys.d) player.nextDirection = 'right';
+
+      // Player movement (tile-based)
+      player.moveTimer -= dt;
+      if (player.moveTimer <= 0) {
+        // Try to move in queued direction first
+        if (player.nextDirection) {
+          const nextTile = getNextTile(player.x, player.y, player.nextDirection);
+          if (nextTile) {
+            player.direction = player.nextDirection;
+            player.x = nextTile.x;
+            player.y = nextTile.y;
+            player.nextDirection = null;
+            player.moveTimer = PLAYER_MOVE_DELAY;
           } else {
-            player.pixelX = targetPixelX;
-            player.pixelY = targetPixelY;
-            player.gridX = next.x;
-            player.gridY = next.y;
+            // Try current direction
+            const currTile = getNextTile(player.x, player.y, player.direction);
+            if (currTile) {
+              player.x = currTile.x;
+              player.y = currTile.y;
+              player.moveTimer = PLAYER_MOVE_DELAY;
+            }
+          }
+        } else {
+          // Move in current direction
+          const currTile = getNextTile(player.x, player.y, player.direction);
+          if (currTile) {
+            player.x = currTile.x;
+            player.y = currTile.y;
+            player.moveTimer = PLAYER_MOVE_DELAY;
           }
         }
       }
 
-      // Update invincibility frames
       if (player.invincible) {
         player.invincibleTimer -= dt;
-        if (player.invincibleTimer <= 0) {
-          player.invincible = false;
-        }
-      }
-      
-      // Clear death flash after short time
-      if (player.justDied) {
-        // Clear after 0.5 seconds
-        if (player.invincibleTimer < (3 * 60 - 30)) {
-          player.justDied = false;
-        }
+        if (player.invincibleTimer <= 0) player.invincible = false;
       }
 
-      // Animate mouth
-      player.mouthAngle += 0.2;
-      if (player.mouthAngle > Math.PI * 2) player.mouthAngle = 0;
+      player.mouthAngle += 0.15;
 
-      // Update ghost penalty timer
-      if (state.ghostPenalty) {
-        state.ghostPenaltyTimer -= dt;
-        if (state.ghostPenaltyTimer <= 0) {
-          state.ghostPenalty = false;
-          state.ghostPenaltyTimer = 0;
-        }
-      }
-
-      // Update supercharged state
+      // Update supercharged
       if (player.supercharged) {
         player.superchargedTimer -= dt;
         setIsSupercharged(true);
-        // Keep ghosts vulnerable during power-up
-        state.ghosts.forEach(g => {
-          if (!g.eaten) g.vulnerable = true;
-        });
+        gameState.ghosts.forEach(g => { if (!g.eaten) g.vulnerable = true; });
         if (player.superchargedTimer <= 0) {
           player.supercharged = false;
           setIsSupercharged(false);
-          state.ghosts.forEach(g => {
-            if (!g.eaten) g.vulnerable = false;
-          });
+          gameState.ghosts.forEach(g => { if (!g.eaten) g.vulnerable = false; });
           
-          // Generate new problem after power-up expires
           const newProblem = MATH_PROBLEMS[Math.floor(Math.random() * MATH_PROBLEMS.length)];
+          gameState.currentProblem = newProblem;
           setCurrentProblem(newProblem);
-          
-          // Create 4 new power pellets randomly in quadrants
-          const midX = Math.floor(MAZE_WIDTH / 2);
-          const midY = Math.floor(MAZE_HEIGHT / 2);
-          
-          const quadrants = [
-            { minX: 1, maxX: midX - 1, minY: 1, maxY: midY - 1 },      // Top-left
-            { minX: midX + 1, maxX: MAZE_WIDTH - 2, minY: 1, maxY: midY - 1 }, // Top-right
-            { minX: 1, maxX: midX - 1, minY: midY + 1, maxY: MAZE_HEIGHT - 2 }, // Bottom-left
-            { minX: midX + 1, maxX: MAZE_WIDTH - 2, minY: midY + 1, maxY: MAZE_HEIGHT - 2 }, // Bottom-right
-          ];
-          
-          const allAnswers = [newProblem.answer, ...newProblem.wrongAnswers].sort(() => Math.random() - 0.5);
-          // Ensure we have at least 4 answers
-          while (allAnswers.length < 4) {
-            allAnswers.push(newProblem.answer + Math.floor(Math.random() * 10) - 5);
-          }
-          
-          const powerPelletSpots: { x: number; y: number }[] = [];
-          quadrants.forEach(quad => {
-            const spot = findRandomPositionInQuadrant(quad.minX, quad.maxX, quad.minY, quad.maxY, powerPelletSpots);
-            if (spot) {
-              powerPelletSpots.push(spot);
-            }
-          });
-          
-          // Fallback to corners if needed
-          while (powerPelletSpots.length < 4) {
-            const fallbackSpots = [
-              { x: 1, y: 1 }, { x: 26, y: 1 },
-              { x: 1, y: 22 }, { x: 26, y: 22 },
-            ];
-            const fallback = fallbackSpots[powerPelletSpots.length];
-            if (!powerPelletSpots.some(p => p.x === fallback.x && p.y === fallback.y)) {
-              powerPelletSpots.push(fallback);
-            } else {
-              break;
-            }
-          }
-          
-          state.powerPellets = powerPelletSpots.map((spot, idx) => ({
-            x: spot.x,
-            y: spot.y,
-            number: allAnswers[idx],
-            isCorrect: allAnswers[idx] === newProblem.answer,
-            collected: false,
-          }));
+          gameState.powerPellets = generatePowerPellets(newProblem);
         }
       } else {
         setIsSupercharged(false);
       }
 
-      // Check pellet collection
-      state.pellets.forEach(pellet => {
-        if (!pellet.collected && player.gridX === pellet.x && player.gridY === pellet.y) {
-          pellet.collected = true;
-          state.score = Math.floor(state.score + 10);
-          setScore(state.score);
+      // Collect pellets
+      gameState.pellets.forEach(p => {
+        if (!p.collected && player.x === p.x && player.y === p.y) {
+          p.collected = true;
+          gameState.score += 10;
+          setScore(gameState.score);
         }
       });
 
-      // Check power pellet collection
-      state.powerPellets.forEach(pellet => {
-        if (!pellet.collected && player.gridX === pellet.x && player.gridY === pellet.y) {
-          pellet.collected = true;
-          if (pellet.isCorrect) {
-            state.score = Math.floor(state.score + 50);
-            
-            // Cancel penalty before making vulnerable
-            if (state.ghostPenalty) {
-              state.ghostPenalty = false;
-              state.ghostPenaltyTimer = 0;
-            }
-            
+      // Collect power pellets
+      gameState.powerPellets.forEach(p => {
+        if (!p.collected && player.x === p.x && player.y === p.y) {
+          p.collected = true;
+          if (p.isCorrect) {
+            gameState.score += 50;
             player.supercharged = true;
-            player.superchargedTimer = 8 * 60; // 8 seconds
-            state.ghosts.forEach(g => {
-              if (!g.eaten) g.vulnerable = true;
+            player.superchargedTimer = 8 * 60;
+            gameState.ghosts.forEach(g => { 
+              if (!g.eaten) {
+                g.vulnerable = true;
+                g.direction = getOpposite(g.direction);
+              }
             });
-            state.ghostEatCount = 0;
-            setScore(state.score);
-            // Note: New problem will be generated when power-up expires
+            gameState.ghostEatCount = 0;
+            setScore(gameState.score);
           } else {
-            // Wrong answer - only penalize if ghosts are NOT vulnerable
-            if (!player.supercharged) {
-              state.ghostPenalty = true;
-              state.ghostPenaltyTimer = 3 * 60; // 3 seconds
-            }
+            // Wrong pellet - trigger penalty mode
+            gameState.penaltyMode = true;
+            gameState.penaltyTimer = 3 * 60; // 3 seconds
           }
         }
       });
 
       // Update ghosts
-      const blinky = state.ghosts.find(g => g.name === 'Blinky');
-      state.ghosts.forEach(ghost => {
+      const blinky = gameState.ghosts.find(g => g.name === 'blinky')!;
+      
+      gameState.ghosts.forEach(ghost => {
         if (ghost.eaten) {
           ghost.respawnTimer -= dt;
           if (ghost.respawnTimer <= 0) {
             ghost.eaten = false;
-            ghost.x = 13;
-            ghost.y = 11;
-            ghost.pixelX = 13 * TILE_SIZE + TILE_SIZE / 2;
-            ghost.pixelY = 11 * TILE_SIZE + TILE_SIZE / 2;
+            ghost.x = 13 + (ghost.name === 'pinky' || ghost.name === 'clyde' ? 1 : 0);
+            ghost.y = 9 + (ghost.name === 'inky' || ghost.name === 'clyde' ? 2 : 0);
             ghost.vulnerable = false;
+            ghost.moveTimer = 0;
           }
           return;
         }
 
-        // Only change direction when at tile center
-        const atTileCenter = Math.abs(ghost.pixelX - (ghost.x * TILE_SIZE + TILE_SIZE / 2)) < 1 &&
-                            Math.abs(ghost.pixelY - (ghost.y * TILE_SIZE + TILE_SIZE / 2)) < 1;
-
-        if (atTileCenter) {
-          // Check if current direction is still valid
-          const currentNext = getNextDirection(ghost.x, ghost.y, ghost.direction);
-          const canContinue = currentNext !== null;
-          
-          // Only change direction if:
-          // 1. Current direction is blocked, OR
-          // 2. We're at an intersection (can turn)
-          if (!canContinue || isIntersection(ghost.x, ghost.y, ghost.direction)) {
-            // Get valid directions (no reverse)
-            const validDirs = getValidDirections(ghost.x, ghost.y, ghost.direction);
-            
-            if (validDirs.length > 0) {
-              let target: { x: number; y: number };
-              
-              if (player.supercharged) {
-                // Vulnerable mode: flee to corner away from player
-                ghost.vulnerable = true;
-                // Target corner furthest from player
-                const corners = [
-                  { x: 1, y: 1 },
-                  { x: 26, y: 1 },
-                  { x: 1, y: 22 },
-                  { x: 26, y: 22 },
-                ];
-                let furthestCorner = corners[0];
-                let maxDist = 0;
-                corners.forEach(corner => {
-                  const dist = manhattanDistance(player.gridX, player.gridY, corner.x, corner.y);
-                  if (dist > maxDist) {
-                    maxDist = dist;
-                    furthestCorner = corner;
-                  }
-                });
-                target = furthestCorner;
-              } else {
-                // Chase mode: use individual targeting
-                ghost.vulnerable = false;
-                target = getGhostTarget(ghost, player, blinky);
-              }
-              
-              // Choose best direction using priority system
-              const bestDir = chooseBestDirection(ghost, target, validDirs);
-              ghost.direction = bestDir;
-            } else if (!canContinue) {
-              // If stuck and no valid directions, reverse (emergency)
-              ghost.direction = getReverseDirection(ghost.direction);
-            }
-          }
+        let moveDelay = ghost.vulnerable ? GHOST_VULNERABLE_DELAY : GHOST_MOVE_DELAY;
+        // During penalty mode, ghosts move 1.5x faster (reduce delay by 1/1.5)
+        if (gameState.penaltyMode && !ghost.vulnerable) {
+          moveDelay = Math.floor(moveDelay / 1.5);
         }
-
-        // Move ghost smoothly (faster when penalized)
-        const currentSpeed = state.ghostPenalty ? GHOST_SPEED * 1.25 : GHOST_SPEED;
-        const next = getNextDirection(ghost.x, ghost.y, ghost.direction);
-        if (next) {
-          const targetPixelX = next.x * TILE_SIZE + TILE_SIZE / 2;
-          const targetPixelY = next.y * TILE_SIZE + TILE_SIZE / 2;
+        ghost.moveTimer -= dt;
+        
+        if (ghost.moveTimer <= 0) {
+          const target = getGhostTarget(ghost, player, blinky);
+          ghost.direction = chooseGhostDirection(ghost, target);
           
-          const dx = targetPixelX - ghost.pixelX;
-          const dy = targetPixelY - ghost.pixelY;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          
-          if (dist > currentSpeed) {
-            ghost.pixelX += (dx / dist) * currentSpeed;
-            ghost.pixelY += (dy / dist) * currentSpeed;
-          } else {
-            ghost.pixelX = targetPixelX;
-            ghost.pixelY = targetPixelY;
+          const next = getNextTile(ghost.x, ghost.y, ghost.direction);
+          if (next) {
             ghost.x = next.x;
             ghost.y = next.y;
           }
+          ghost.moveTimer = moveDelay;
         }
 
-        // Wrap around for ghosts
-        if (ghost.x === 0 && ghost.direction === 'left' && ghost.pixelX <= TILE_SIZE / 2) {
-          ghost.x = MAZE_WIDTH - 1;
-          ghost.pixelX = (MAZE_WIDTH - 1) * TILE_SIZE + TILE_SIZE / 2;
-        } else if (ghost.x === MAZE_WIDTH - 1 && ghost.direction === 'right' && ghost.pixelX >= (MAZE_WIDTH - 1) * TILE_SIZE + TILE_SIZE / 2) {
-          ghost.x = 0;
-          ghost.pixelX = TILE_SIZE / 2;
-        }
-
-        // Check collision with player (using grid positions)
-        if (ghost.x === player.gridX && ghost.y === player.gridY) {
+        // Ghost collision (tile-based)
+        if (ghost.x === player.x && ghost.y === player.y) {
           if (player.supercharged && ghost.vulnerable) {
-            // Eat ghost
             ghost.eaten = true;
-            ghost.respawnTimer = 5 * 60; // 5 seconds
-            state.ghostEatCount++;
-            const points = [500, 1000, 2000, 4000][Math.min(state.ghostEatCount - 1, 3)] || 4000;
-            state.score = Math.floor(state.score + points);
-            setScore(state.score);
+            ghost.respawnTimer = 5 * 60;
+            gameState.ghostEatCount++;
+            const points = [200, 400, 800, 1600][Math.min(gameState.ghostEatCount - 1, 3)];
+            gameState.score += points;
+            setScore(gameState.score);
           } else if (!player.supercharged && !player.invincible) {
-            // Lose a life
-            state.lives--;
-            setLives(state.lives);
-            player.justDied = true;
-            
-            if (state.lives <= 0) {
+            gameState.lives--;
+            setLives(gameState.lives);
+            if (gameState.lives <= 0) {
               endGame();
-            } else {
-              // Reset player position with invincibility frames (2 tiles left of original)
-              player.gridX = 12;
-              player.gridY = 17;
-              player.pixelX = 12 * TILE_SIZE + TILE_SIZE / 2;
-              player.pixelY = 17 * TILE_SIZE + TILE_SIZE / 2;
-              player.direction = 'right';
-              player.nextDirection = null;
-              player.invincible = true;
-              player.invincibleTimer = 3 * 60; // 3 seconds of invincibility
-              // Note: Ghosts are NOT reset - they continue from their current positions
+              return;
             }
+            player.x = 14;
+            player.y = 17;
+            player.direction = 'left';
+            player.invincible = true;
+            player.invincibleTimer = 2 * 60;
           }
         }
       });
 
       // Timer
-      state.timeRemaining -= dt / 60;
-      if (state.timeRemaining <= 0) {
-        state.timeRemaining = 0;
+      gameState.timeRemaining -= dt / 60;
+      if (gameState.timeRemaining <= 0) {
+        gameState.timeRemaining = 0;
         setTimeRemaining(0);
         endGame();
-      } else {
-        setTimeRemaining(Math.ceil(state.timeRemaining));
+        return;
       }
-    };
+      setTimeRemaining(Math.ceil(gameState.timeRemaining));
 
-    const endGame = () => {
-      gameState.current.active = false;
-      setGameOver(true);
-      cancelAnimationFrame(animationId);
-    };
-
-    const draw = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // Enable crisp text rendering
-      ctx.imageSmoothingEnabled = false;
-      
-      // Death flash effect
-      if (gameState.current.player.justDied) {
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-      
-      ctx.fillStyle = '#050510';
+      // ============ DRAW ============
+      ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      const { player, pellets, powerPellets, ghosts } = gameState.current;
-      const state = gameState.current;
-
-      // Draw maze
-      ctx.strokeStyle = '#1a1a3a';
-      ctx.lineWidth = 2;
+      // Draw maze walls
+      ctx.fillStyle = '#2121de';
       for (let y = 0; y < MAZE_HEIGHT; y++) {
         for (let x = 0; x < MAZE_WIDTH; x++) {
           if (MAZE_LAYOUT[y][x] === '1') {
-            ctx.fillStyle = '#1a1a3a';
-            ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            ctx.fillRect(x * TILE_SIZE + 1, y * TILE_SIZE + 1, TILE_SIZE - 2, TILE_SIZE - 2);
           }
         }
       }
 
       // Draw pellets
-      ctx.fillStyle = '#00f3ff';
-      pellets.forEach(pellet => {
-        if (!pellet.collected) {
+      ctx.fillStyle = '#ffb897';
+      gameState.pellets.forEach(p => {
+        if (!p.collected) {
           ctx.beginPath();
-          ctx.arc(
-            pellet.x * TILE_SIZE + TILE_SIZE / 2,
-            pellet.y * TILE_SIZE + TILE_SIZE / 2,
-            2,
-            0,
-            Math.PI * 2
-          );
+          ctx.arc(p.x * TILE_SIZE + TILE_SIZE / 2, p.y * TILE_SIZE + TILE_SIZE / 2, 2, 0, Math.PI * 2);
           ctx.fill();
         }
       });
 
       // Draw power pellets
-      powerPellets.forEach(pellet => {
-        if (!pellet.collected) {
-          const size = 8;
-          // All pellets same color (no hint for correct answer)
+      gameState.powerPellets.forEach(p => {
+        if (!p.collected) {
+          const px = p.x * TILE_SIZE + TILE_SIZE / 2;
+          const py = p.y * TILE_SIZE + TILE_SIZE / 2;
+          
+          const pulse = 0.8 + Math.sin(time / 150) * 0.2;
+          
           ctx.fillStyle = '#ffff00';
           ctx.beginPath();
-          ctx.arc(
-            pellet.x * TILE_SIZE + TILE_SIZE / 2,
-            pellet.y * TILE_SIZE + TILE_SIZE / 2,
-            size,
-            0,
-            Math.PI * 2
-          );
+          ctx.arc(px, py, TILE_SIZE * 0.4 * pulse, 0, Math.PI * 2);
           ctx.fill();
           
-          // Draw number with high-res but pixelated font
-          ctx.fillStyle = '#000000';
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 3;
-          ctx.font = 'bold 16px "Press Start 2P"';
+          ctx.font = `bold ${TILE_SIZE * 0.65}px "Press Start 2P", monospace`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          const textX = pellet.x * TILE_SIZE + TILE_SIZE / 2;
-          const textY = pellet.y * TILE_SIZE + TILE_SIZE / 2;
-          // Draw stroke first for outline (makes text more readable)
-          ctx.strokeText(pellet.number.toString(), textX, textY);
-          // Then fill for solid text
-          ctx.fillText(pellet.number.toString(), textX, textY);
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2.5;
+          ctx.strokeText(p.number.toString(), px, py);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(p.number.toString(), px, py);
         }
       });
-
-      // Helper function to draw classic Pac-Man ghost shape
-      const drawGhost = (ctx: CanvasRenderingContext2D, x: number, y: number, color: string, size: number, showOutline: boolean) => {
-        const radius = size / 2;
-        const waveHeight = size * 0.2; // Height of wavy bottom
-        const waveCount = 3; // Number of waves at bottom
-        
-        ctx.save();
-        ctx.translate(x, y);
-        
-        // Draw ghost body
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        
-        // Top semi-circle (head)
-        ctx.arc(0, -radius * 0.2, radius * 0.8, Math.PI, 0, false);
-        
-        // Right side (straight down)
-        ctx.lineTo(radius, radius * 0.4);
-        
-        // Wavy bottom (classic Pac-Man ghost skirt)
-        const waveWidth = (radius * 2) / (waveCount * 2);
-        for (let i = 0; i <= waveCount * 2; i++) {
-          const waveX = radius - (i * waveWidth);
-          const baseY = radius * 0.4;
-          const waveY = baseY + (i % 2 === 0 ? 0 : waveHeight);
-          ctx.lineTo(waveX, waveY);
-        }
-        
-        // Left side (straight up)
-        ctx.lineTo(-radius, radius * 0.4);
-        
-        // Close path back to top
-        ctx.closePath();
-        ctx.fill();
-        
-        // White outline when vulnerable or penalized
-        if (showOutline) {
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-        }
-        
-        // Draw eyes (only if not vulnerable/penalized, or if blue)
-        if (!showOutline || color === '#0000ff') {
-          const eyeSize = size * 0.18;
-          const eyeSpacing = size * 0.3;
-          const eyeY = -size * 0.05;
-          
-          // Left eye (white)
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.arc(-eyeSpacing / 2, eyeY, eyeSize, 0, Math.PI * 2);
-          ctx.fill();
-          
-          // Right eye (white)
-          ctx.beginPath();
-          ctx.arc(eyeSpacing / 2, eyeY, eyeSize, 0, Math.PI * 2);
-          ctx.fill();
-          
-          // Eye pupils (black)
-          ctx.fillStyle = '#000000';
-          const pupilSize = eyeSize * 0.6;
-          const pupilOffsetX = size * 0.03; // Slight horizontal offset
-          const pupilOffsetY = size * 0.02; // Slight vertical offset
-          
-          // Left pupil
-          ctx.beginPath();
-          ctx.arc(-eyeSpacing / 2 + pupilOffsetX, eyeY + pupilOffsetY, pupilSize, 0, Math.PI * 2);
-          ctx.fill();
-          
-          // Right pupil
-          ctx.beginPath();
-          ctx.arc(eyeSpacing / 2 + pupilOffsetX, eyeY + pupilOffsetY, pupilSize, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        
-        ctx.restore();
-      };
 
       // Draw ghosts
-      ghosts.forEach(ghost => {
-        if (ghost.eaten) return;
-        
-        // Determine ghost color
-        let ghostColor = ghost.color;
-        let shouldShowOutline = false;
-        
-        if (state.ghostPenalty && !ghost.vulnerable) {
-          // Red when penalized (and not vulnerable)
-          const penaltyTimeRemaining = state.ghostPenaltyTimer;
-          const shouldFlash = penaltyTimeRemaining <= 1 * 60; // 1 second = 60 frames
-          const flashVisible = shouldFlash ? Math.floor(penaltyTimeRemaining / 10) % 2 === 0 : true;
-          
-          if (flashVisible) {
-            ghostColor = '#ff0000'; // Red when penalized
-          } else {
-            // Flash to white during warning
-            ghostColor = '#ffffff';
-          }
-          shouldShowOutline = true;
-        } else if (ghost.vulnerable) {
-          // Check if should flash (2 seconds before vulnerable ends)
-          const vulnerableTimeRemaining = state.player.superchargedTimer;
-          const shouldFlash = vulnerableTimeRemaining <= 2 * 60; // 2 seconds = 120 frames
-          const flashVisible = shouldFlash ? Math.floor(vulnerableTimeRemaining / 10) % 2 === 0 : true;
-          
-          if (flashVisible) {
-            ghostColor = '#0000ff'; // Blue when vulnerable
-          } else {
-            // Flash to white during warning
-            ghostColor = '#ffffff';
-          }
-          shouldShowOutline = true;
+      const flashing = player.supercharged && player.superchargedTimer < 2 * 60 && Math.floor(player.superchargedTimer / 8) % 2 === 0;
+      gameState.ghosts.forEach(ghost => {
+        if (!ghost.eaten) {
+          drawGhost(ghost.x, ghost.y, ghost.color, ghost.vulnerable, flashing, gameState.penaltyMode);
         }
-        
-        // Draw classic ghost shape
-        drawGhost(ctx, ghost.pixelX, ghost.pixelY, ghostColor, TILE_SIZE - 4, shouldShowOutline);
       });
 
-      // Draw player (with invincibility flashing)
-      const invincibleFlash = player.invincible && Math.floor(player.invincibleTimer / 5) % 2 === 0;
-      
-      if (!invincibleFlash) {
-        ctx.save();
-        ctx.translate(player.pixelX, player.pixelY);
-        const angle = {
-          'up': -Math.PI / 2,
-          'down': Math.PI / 2,
-          'left': Math.PI,
-          'right': 0,
-        }[player.direction];
-        ctx.rotate(angle);
+      // Draw player
+      const playerFlash = player.invincible && Math.floor(player.invincibleTimer / 4) % 2 === 0;
+      if (!playerFlash) {
+        const centerX = player.x * TILE_SIZE + TILE_SIZE / 2;
+        const centerY = player.y * TILE_SIZE + TILE_SIZE / 2;
         
-        ctx.fillStyle = player.supercharged ? '#ffff00' : '#ffff00';
-        const mouthOpen = Math.abs(Math.sin(player.mouthAngle)) * 0.5;
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        const angle = { 'up': -Math.PI / 2, 'down': Math.PI / 2, 'left': Math.PI, 'right': 0 }[player.direction];
+        ctx.rotate(angle);
+        ctx.fillStyle = '#ffff00';
+        const mouth = Math.abs(Math.sin(player.mouthAngle)) * 0.4 + 0.1;
         ctx.beginPath();
-        ctx.arc(0, 0, TILE_SIZE / 2 - 2, mouthOpen, Math.PI * 2 - mouthOpen);
+        ctx.arc(0, 0, TILE_SIZE / 2 - 1, mouth, Math.PI * 2 - mouth);
         ctx.lineTo(0, 0);
         ctx.closePath();
         ctx.fill();
         ctx.restore();
       }
+
+      animationIdRef.current = requestAnimationFrame(loop);
     };
 
-    animationId = requestAnimationFrame(loop);
+    gameState.active = true;
+    animationIdRef.current = requestAnimationFrame(loop);
+    setTimeout(() => canvas.focus(), 100);
+
     return () => {
-      cancelAnimationFrame(animationId);
-      canvas.removeEventListener('focus', handleFocus);
-      canvas.removeEventListener('blur', handleBlur);
-      canvas.removeEventListener('click', handleCanvasClick);
+      gameState.active = false;
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+        animationIdRef.current = null;
+      }
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [gameStarted, gameOver, generatePowerPellets]);
 
-  if (gameOver) {
+  // Start menu
+  if (!gameStarted) {
     return (
-      <GameFrame
-        title="PAC-MAN: MATH BLITZ"
-        score={score}
-        lives={lives}
-        timeRemaining={timeRemaining}
-        containerClassName="aspect-[7/6]"
-        overlay={
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80">
-              <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">GAME OVER</h2>
-              <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
-              
-              <div className="flex gap-4">
-                <button 
-                  onClick={() => window.location.reload()} 
-                  className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
-                >
-                  RETRY
-                </button>
-                <button 
-                  onClick={() => navigate('/results', { state: { score, game: 'Pac-Man: Math Blitz' } })}
-                  className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
-                >
-                  CONTINUE
-                </button>
-              </div>
+      <div className="max-w-2xl mx-auto px-4">
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={() => navigate('/')} className="flex items-center gap-2 text-gray-400 hover:text-white">
+            <ArrowLeft size={18} />
+            <span className="font-['Press_Start_2P'] text-[10px]">EXIT</span>
+          </button>
+          <h1 className="font-['Press_Start_2P'] text-sm text-neon-yellow">PAC-MAN</h1>
+          <div className="w-16"></div>
+        </div>
+
+        <div className="border-4 border-space-700 rounded-lg bg-black p-6">
+          <div className="flex flex-col items-center justify-center">
+            <h1 className="text-2xl text-yellow-400 font-['Press_Start_2P'] mb-3 animate-pulse">PAC-MAN</h1>
+            <h2 className="text-xs text-neon-cyan font-['Press_Start_2P'] mb-6">MATH BLITZ</h2>
+            
+            <div className="bg-gray-900/80 border-2 border-yellow-400 rounded-lg p-4 mb-6 max-w-sm text-left">
+              <h3 className="text-[10px] text-neon-yellow font-['Press_Start_2P'] mb-3 text-center">HOW TO PLAY</h3>
+              <ul className="text-[9px] text-gray-300 space-y-2">
+                <li>▸ Move: <span className="text-neon-green">W A S D</span> or Arrow Keys</li>
+                <li>▸ Collect dots for points</li>
+                <li>▸ Find the <span className="text-neon-yellow">correct answer</span> pellet</li>
+                <li>▸ Correct answer = <span className="text-neon-green">eat ghosts!</span></li>
+                <li>▸ Avoid ghosts unless powered up!</li>
+              </ul>
             </div>
-        }
-      >
-        <canvas ref={canvasRef} className="w-full h-full block" />
-      </GameFrame>
+
+            <button 
+              onClick={startGame}
+              className="px-6 py-3 bg-yellow-400 text-black font-['Press_Start_2P'] text-xs rounded hover:bg-yellow-300 hover:scale-105 transition-all"
+            >
+              START GAME
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
-  return (
-    <GameFrame
-      title="PAC-MAN: MATH BLITZ"
-      score={score}
-      lives={lives}
-      timeRemaining={timeRemaining}
-    >
-      {/* Top UI - now part of GameFrame mostly, but custom math display needed? */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-center w-full pointer-events-none">
-            <div className="text-gray-400 text-xs mb-1 font-pixel">
-              {isSupercharged ? 'POWER ACTIVE!' : 'SOLVE TO GET POWER'}
+  // Game over
+  if (gameOver) {
+    return (
+      <div className="max-w-2xl mx-auto px-4">
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={() => navigate('/')} className="flex items-center gap-2 text-gray-400 hover:text-white">
+            <ArrowLeft size={18} />
+            <span className="font-['Press_Start_2P'] text-[10px]">EXIT</span>
+          </button>
+          <h1 className="font-['Press_Start_2P'] text-sm text-neon-yellow">PAC-MAN</h1>
+          <div className="w-16"></div>
+        </div>
+
+        <div className="border-4 border-space-700 rounded-lg bg-black p-6">
+          <div className="flex flex-col items-center justify-center py-8">
+            <h2 className="text-2xl text-neon-pink font-['Press_Start_2P'] mb-4 animate-pulse">GAME OVER</h2>
+            <div className="text-lg text-white font-['Press_Start_2P'] mb-6">SCORE: {score.toLocaleString()}</div>
+            
+            <div className="flex gap-4">
+              <button onClick={startGame} className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white text-xs">
+                RETRY
+              </button>
+              <button onClick={() => completeGame(score)} className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white text-xs">
+                CONTINUE
+              </button>
             </div>
-        <div className="text-neon-cyan text-2xl font-pixel text-shadow">
-              {isSupercharged 
-                ? currentProblem.equation.replace('_', currentProblem.answer.toString())
-                : currentProblem.equation}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Active game - custom layout with UI above and below
+  return (
+    <div className="max-w-2xl mx-auto px-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={() => navigate('/')} className="flex items-center gap-2 text-gray-400 hover:text-white">
+          <ArrowLeft size={18} />
+          <span className="font-['Press_Start_2P'] text-[10px]">EXIT</span>
+        </button>
+        <h1 className="font-['Press_Start_2P'] text-sm text-neon-yellow">PAC-MAN</h1>
+        <div className="w-16"></div>
+      </div>
+
+      {/* Game container */}
+      <div className="border-4 border-space-700 rounded-lg bg-black overflow-hidden">
+        {/* Top UI bar */}
+        <div 
+          className="flex justify-between items-center px-4 bg-gray-900 border-b border-space-700"
+          style={{ height: TOP_UI_HEIGHT }}
+        >
+          <div className="font-['Press_Start_2P'] text-white">
+            <div className="text-neon-cyan text-[8px]">SCORE</div>
+            <div className="text-sm">{score.toLocaleString()}</div>
+          </div>
+          
+          <div className="font-['Press_Start_2P'] text-center flex-1 mx-4">
+            <div className="text-gray-400 text-[7px]">{isSupercharged ? 'POWER MODE!' : 'SOLVE:'}</div>
+            <div className={`text-xs ${isSupercharged ? 'text-neon-green animate-pulse' : 'text-neon-cyan'}`}>
+              {isSupercharged ? currentProblem.equation.replace('_', currentProblem.answer.toString()) : currentProblem.equation}
             </div>
           </div>
           
+          <div className="font-['Press_Start_2P'] text-white text-right">
+            <div className="text-neon-pink text-[8px]">LIVES</div>
+            <div className="text-sm">{lives > 0 ? '♥'.repeat(lives) : '—'}</div>
+          </div>
+        </div>
+        
+        {/* Game canvas - exact size, centered */}
+        <div className="flex justify-center bg-black">
           <canvas 
             ref={canvasRef} 
-            className="w-full h-full bg-transparent cursor-none"
-            onClick={(e) => e.currentTarget.focus()}
+            style={{ 
+              width: MAZE_WIDTH * TILE_SIZE,
+              height: MAZE_HEIGHT * TILE_SIZE,
+              imageRendering: 'pixelated'
+            }} 
           />
-    </GameFrame>
+        </div>
+        
+        {/* Bottom UI bar */}
+        <div 
+          className="flex justify-center items-center px-4 bg-gray-900 border-t border-space-700"
+          style={{ height: BOTTOM_UI_HEIGHT }}
+        >
+          <div className="font-['Press_Start_2P'] text-white flex items-center gap-3">
+            <span className="text-neon-yellow text-[8px]">TIME</span>
+            <span className={`text-sm ${timeRemaining <= 10 ? 'text-red-500 animate-pulse' : ''}`}>
+              {timeRemaining.toString().padStart(2, '0')}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Controls hint */}
+      <div className="mt-4 flex justify-center gap-6 text-gray-500 text-xs">
+        <div className="flex items-center gap-1.5">
+          <span className="border border-gray-700 px-1.5 py-0.5 rounded bg-space-800 text-[10px] text-white font-['Press_Start_2P']">WASD</span>
+          <span>Move</span>
+        </div>
+      </div>
+    </div>
   );
 };

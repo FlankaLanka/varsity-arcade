@@ -26,3 +26,26 @@ export const formatLastSeen = (date: Date): string => {
   return `${days}d ago`;
 };
 
+/**
+ * Generates a consistent random color for a user based on their ID.
+ * Uses a simple hash function to ensure the same user always gets the same color.
+ */
+export const getUserColor = (userId: string): string => {
+  // Simple hash function to convert userId to a number
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    const char = userId.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  
+  // Generate RGB values with good saturation and brightness
+  // Use modulo to ensure values are in valid range
+  const r = Math.abs(hash) % 200 + 55; // 55-255 for good visibility
+  const g = Math.abs(hash * 7) % 200 + 55;
+  const b = Math.abs(hash * 13) % 200 + 55;
+  
+  // Convert to hex
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+};
+

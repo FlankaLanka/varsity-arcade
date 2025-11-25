@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { GameFrame } from '../components/GameFrame';
-import { useNavigate } from 'react-router-dom';
+import { useGameCompletion } from '../hooks/useGameCompletion';
 
 interface Ball {
   x: number;
@@ -19,61 +19,63 @@ interface MathProblem {
   wrongAnswers: number[];
 }
 
-// Generate easy order of operations problems
-const generateMathProblem = (): MathProblem => {
-  const problems: MathProblem[] = [
-    { equation: "2 + 3 × 4", answer: 14, wrongAnswers: [20, 11] }, // 2 + 12 = 14
-    { equation: "(5 + 2) × 3", answer: 21, wrongAnswers: [17, 25] }, // 7 × 3 = 21
-    { equation: "10 - 2 × 3", answer: 4, wrongAnswers: [24, 7] }, // 10 - 6 = 4
-    { equation: "4 × 2 + 5", answer: 13, wrongAnswers: [18, 9] }, // 8 + 5 = 13
-    { equation: "(8 - 3) × 2", answer: 10, wrongAnswers: [13, 7] }, // 5 × 2 = 10
-    { equation: "6 + 4 ÷ 2", answer: 8, wrongAnswers: [5, 10] }, // 6 + 2 = 8
-    { equation: "12 ÷ 3 + 1", answer: 5, wrongAnswers: [7, 3] }, // 4 + 1 = 5
-    { equation: "3 × 3 - 2", answer: 7, wrongAnswers: [3, 10] }, // 9 - 2 = 7
-    { equation: "(6 + 4) ÷ 2", answer: 5, wrongAnswers: [7, 3] }, // 10 ÷ 2 = 5
-    { equation: "5 + 2 × 3", answer: 11, wrongAnswers: [21, 8] }, // 5 + 6 = 11
-    { equation: "8 - 2 × 2", answer: 4, wrongAnswers: [12, 6] }, // 8 - 4 = 4
-    { equation: "9 ÷ 3 + 4", answer: 7, wrongAnswers: [5, 9] }, // 3 + 4 = 7
-  ];
-  
-  return problems[Math.floor(Math.random() * problems.length)];
-};
+const PROBLEMS: MathProblem[] = [
+  { equation: "2 + 3 × 4", answer: 14, wrongAnswers: [20, 11] },
+  { equation: "(5 + 2) × 3", answer: 21, wrongAnswers: [17, 25] },
+  { equation: "10 - 2 × 3", answer: 4, wrongAnswers: [24, 7] },
+  { equation: "4 × 2 + 5", answer: 13, wrongAnswers: [18, 9] },
+  { equation: "(8 - 3) × 2", answer: 10, wrongAnswers: [13, 7] },
+  { equation: "6 + 4 ÷ 2", answer: 8, wrongAnswers: [5, 10] },
+  { equation: "12 ÷ 3 + 1", answer: 5, wrongAnswers: [7, 3] },
+  { equation: "3 × 3 - 2", answer: 7, wrongAnswers: [3, 10] },
+];
 
 const PADDLE_WIDTH = 10;
-const PADDLE_HEIGHT = 80;
-const BALL_RADIUS = 11;
+const PADDLE_HEIGHT = 70;
+const BALL_RADIUS = 10;
 const PADDLE_SPEED = 2;
 const BALL_SPEED = 2;
-const PADDLE_MARGIN = 20;
+const PADDLE_MARGIN = 18;
 
 export const PongArithmeticGame = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(60);
   const [currentProblem, setCurrentProblem] = useState<MathProblem | null>(null);
 
-  const gameState = useRef({
-    playerPaddle: { x: PADDLE_MARGIN, y: 225, width: PADDLE_WIDTH, height: PADDLE_HEIGHT },
-    enemyPaddle: { x: 0, y: 225, width: PADDLE_WIDTH, height: PADDLE_HEIGHT },
-    balls: [] as Ball[],
-    keys: { w: false, s: false },
-    score: 0,
-    timeRemaining: 60,
-    active: true,
-    flashTimer: 0,
-    flashColor: null as 'red' | 'green' | null,
-    currentProblem: null as MathProblem | null,
-  });
+  const gameStateRef = useRef<{
+    playerPaddle: { x: number; y: number };
+    enemyPaddle: { x: number; y: number };
+    balls: Ball[];
+    keys: { w: boolean; s: boolean };
+    score: number;
+    timeRemaining: number;
+    active: boolean;
+    flashTimer: number;
+    flashColor: 'red' | 'green' | null;
+    currentProblem: MathProblem | null;
+  } | null>(null);
+  
+  const animationIdRef = useRef<number | null>(null);
 
-  const navigate = useNavigate();
+  const { completeGame } = useGameCompletion({ gameType: 'pong-arithmetic', gameName: 'Pong Arithmetic' });
 
-  // Reset game state function
-  const resetGameState = () => {
-    gameState.current = {
-      playerPaddle: { x: PADDLE_MARGIN, y: 225, width: PADDLE_WIDTH, height: PADDLE_HEIGHT },
-      enemyPaddle: { x: 0, y: 225, width: PADDLE_WIDTH, height: PADDLE_HEIGHT },
-      balls: [],
+  const startGame = useCallback(() => {
+    gameStateRef.current = {
+      playerPaddle: { x: PADDLE_MARGIN, y: 165 },
+      enemyPaddle: { x: 682, y: 165 },
+      balls: [{
+        x: 350,
+        y: 200,
+        vx: BALL_SPEED,
+        vy: (Math.random() - 0.5) * BALL_SPEED,
+        number: 0,
+        isCorrect: false,
+        alpha: 1,
+        dissolving: false,
+      }],
       keys: { w: false, s: false },
       score: 0,
       timeRemaining: 60,
@@ -82,203 +84,156 @@ export const PongArithmeticGame = () => {
       flashColor: null,
       currentProblem: null,
     };
+    
     setScore(0);
     setGameOver(false);
     setTimeRemaining(60);
     setCurrentProblem(null);
-  };
-
-  // Spawn initial ball
-  const spawnBall = (canvas: HTMLCanvasElement) => {
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    const angle = (Math.random() - 0.5) * Math.PI * 0.5; // Random angle between -45 and 45 degrees
-    const vx = Math.cos(angle) * BALL_SPEED;
-    const vy = Math.sin(angle) * BALL_SPEED;
-    
-    gameState.current.balls = [{
-      x: centerX,
-      y: centerY,
-      vx: vx > 0 ? vx : -vx, // Always start going right
-      vy,
-      number: 0,
-      isCorrect: false,
-      alpha: 1,
-      dissolving: false,
-    }];
-    gameState.current.currentProblem = null;
-  };
-
-  // Split ball into 3 numbered balls
-  const splitBall = (hitBall: Ball) => {
-    const problem = generateMathProblem();
-    gameState.current.currentProblem = problem;
-    setCurrentProblem(problem);
-
-    const allAnswers = [problem.answer, ...problem.wrongAnswers].sort(() => Math.random() - 0.5);
-    const newBalls: Ball[] = [];
-
-    // Spawn 3 balls at enemy paddle position, diverging with wider spread
-    const spawnX = gameState.current.enemyPaddle.x - BALL_RADIUS;
-    const spawnY = hitBall.y;
-
-    // Angles for divergence: spread out more vertically
-    // Top ball: up-left, Middle ball: straight left, Bottom ball: down-left
-    const angles = [-Math.PI * 0.8, -Math.PI * 0.5, -Math.PI * 0.2];
-    
-    // Also offset Y positions slightly to prevent clustering
-    const yOffsets = [-15, 0, 15];
-    
-    angles.forEach((angle, index) => {
-      const vx = Math.cos(angle) * BALL_SPEED;
-      const vy = Math.sin(angle) * BALL_SPEED;
-      
-      newBalls.push({
-        x: spawnX,
-        y: spawnY + yOffsets[index],
-        vx,
-        vy,
-        number: allAnswers[index],
-        isCorrect: allAnswers[index] === problem.answer,
-        alpha: 1,
-        dissolving: false,
-      });
-    });
-
-    gameState.current.balls = newBalls;
-  };
+    setGameStarted(true);
+  }, []);
 
   useEffect(() => {
-    // Reset game state on mount
-    resetGameState();
+    return () => {
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!gameStarted || gameOver || !gameStateRef.current) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    canvas.width = 800;
-    canvas.height = 450;
-
-    // Initialize enemy paddle position
-    gameState.current.enemyPaddle.x = canvas.width - PADDLE_MARGIN - PADDLE_WIDTH;
-
-    // Make canvas focusable
+    canvas.width = 700;
+    canvas.height = 400;
     canvas.tabIndex = 0;
     canvas.style.outline = 'none';
 
+    const gameState = gameStateRef.current;
     let isFocused = false;
-    let animationId: number | null = null;
 
-    const handleFocus = () => {
-      isFocused = true;
-    };
+    const handleFocus = () => { isFocused = true; };
+    const handleBlur = () => { isFocused = false; };
 
-    const handleBlur = () => {
-      isFocused = false;
-    };
-
-    // Input handlers - only W and S keys
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       if (key === 'w' || key === 's') {
-        // Auto-focus canvas if not focused
-        if (!isFocused) {
-          canvas.focus();
-        }
-        if (key === 'w') gameState.current.keys.w = true;
-        if (key === 's') gameState.current.keys.s = true;
+        if (!isFocused) canvas.focus();
+        if (key === 'w') gameState.keys.w = true;
+        if (key === 's') gameState.keys.s = true;
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
-      if (key === 'w') gameState.current.keys.w = false;
-      if (key === 's') gameState.current.keys.s = false;
-    };
-
-    const handleCanvasClick = () => {
-      canvas.focus();
+      if (key === 'w') gameState.keys.w = false;
+      if (key === 's') gameState.keys.s = false;
     };
 
     canvas.addEventListener('focus', handleFocus);
     canvas.addEventListener('blur', handleBlur);
-    canvas.addEventListener('click', handleCanvasClick);
+    canvas.addEventListener('click', () => canvas.focus());
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
-    // Initialize game
-    spawnBall(canvas);
-    
-    // Auto-focus canvas on mount
-    canvas.focus();
-
-    // Game Loop
-    let lastTime = 0;
-
-    const loop = (time: number) => {
-      const dt = (time - lastTime) / 16.66; // Normalize to 60fps
-      lastTime = time;
-
-      if (!gameState.current.active) return;
-
-      update(dt, canvas);
-      draw(ctx, canvas);
-
-      animationId = requestAnimationFrame(loop);
+    const spawnBall = () => {
+      gameState.balls = [{
+        x: 350,
+        y: 200,
+        vx: BALL_SPEED,
+        vy: (Math.random() - 0.5) * BALL_SPEED,
+        number: 0,
+        isCorrect: false,
+        alpha: 1,
+        dissolving: false,
+      }];
+      gameState.currentProblem = null;
+      setCurrentProblem(null);
     };
 
-    const update = (dt: number, canvas: HTMLCanvasElement) => {
-      const state = gameState.current;
+    const splitBall = (ball: Ball) => {
+      const problem = PROBLEMS[Math.floor(Math.random() * PROBLEMS.length)];
+      gameState.currentProblem = problem;
+      setCurrentProblem(problem);
 
-      // Update flash timer
-      if (state.flashTimer > 0) {
-        state.flashTimer -= dt;
-        if (state.flashTimer <= 0) {
-          state.flashTimer = 0;
-          state.flashColor = null;
+      const answers = [problem.answer, ...problem.wrongAnswers].sort(() => Math.random() - 0.5);
+      const angles = [-Math.PI * 0.75, -Math.PI * 0.5, -Math.PI * 0.25];
+      const yOffsets = [-12, 0, 12];
+      
+      gameState.balls = angles.map((angle, i) => ({
+        x: gameState.enemyPaddle.x - BALL_RADIUS,
+        y: ball.y + yOffsets[i],
+        vx: Math.cos(angle) * BALL_SPEED,
+        vy: Math.sin(angle) * BALL_SPEED,
+        number: answers[i],
+        isCorrect: answers[i] === problem.answer,
+        alpha: 1,
+        dissolving: false,
+      }));
+    };
+
+    let lastTime = performance.now();
+
+    const endGame = () => {
+      gameState.active = false;
+      setGameOver(true);
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+        animationIdRef.current = null;
+      }
+    };
+
+    const loop = (time: number) => {
+      if (!gameState.active) return;
+
+      const dt = Math.min((time - lastTime) / 16.66, 3);
+      lastTime = time;
+
+      // Flash timer
+      if (gameState.flashTimer > 0) {
+        gameState.flashTimer -= dt;
+        if (gameState.flashTimer <= 0) {
+          gameState.flashTimer = 0;
+          gameState.flashColor = null;
         }
       }
 
-      // Player paddle movement
-      if (state.keys.w && state.playerPaddle.y > 0) {
-        state.playerPaddle.y -= PADDLE_SPEED * dt;
+      // Player paddle
+      if (gameState.keys.w && gameState.playerPaddle.y > 0) {
+        gameState.playerPaddle.y -= PADDLE_SPEED * dt;
       }
-      if (state.keys.s && state.playerPaddle.y + state.playerPaddle.height < canvas.height) {
-        state.playerPaddle.y += PADDLE_SPEED * dt;
+      if (gameState.keys.s && gameState.playerPaddle.y + PADDLE_HEIGHT < canvas.height) {
+        gameState.playerPaddle.y += PADDLE_SPEED * dt;
       }
 
-      // Enemy AI - perfect tracking (find ball moving toward enemy)
-      const ballMovingTowardEnemy = state.balls.find(ball => ball.vx > 0 && !ball.dissolving);
-      if (ballMovingTowardEnemy) {
-        const targetY = ballMovingTowardEnemy.y - state.enemyPaddle.height / 2;
-        const diff = targetY - state.enemyPaddle.y;
-        const maxMove = PADDLE_SPEED * dt * 1.5; // Faster than player for perfect AI
+      // Enemy AI
+      const targetBall = gameState.balls.find(b => b.vx > 0 && !b.dissolving);
+      if (targetBall) {
+        const targetY = targetBall.y - PADDLE_HEIGHT / 2;
+        const diff = targetY - gameState.enemyPaddle.y;
+        const maxMove = PADDLE_SPEED * dt * 1.5;
         
         if (Math.abs(diff) > maxMove) {
-          state.enemyPaddle.y += diff > 0 ? maxMove : -maxMove;
+          gameState.enemyPaddle.y += diff > 0 ? maxMove : -maxMove;
         } else {
-          state.enemyPaddle.y = targetY;
+          gameState.enemyPaddle.y = targetY;
         }
-
-        // Keep paddle in bounds
-        if (state.enemyPaddle.y < 0) state.enemyPaddle.y = 0;
-        if (state.enemyPaddle.y + state.enemyPaddle.height > canvas.height) {
-          state.enemyPaddle.y = canvas.height - state.enemyPaddle.height;
-        }
+        gameState.enemyPaddle.y = Math.max(0, Math.min(canvas.height - PADDLE_HEIGHT, gameState.enemyPaddle.y));
       }
 
-      // Update balls (iterate backwards to safely remove items)
-      for (let i = state.balls.length - 1; i >= 0; i--) {
-        const ball = state.balls[i];
-        
-        // Safety check - ball might be undefined if array was cleared
+      // Update balls
+      for (let i = gameState.balls.length - 1; i >= 0; i--) {
+        const ball = gameState.balls[i];
         if (!ball) continue;
-        
+
         if (ball.dissolving) {
           ball.alpha -= 0.05 * dt;
           if (ball.alpha <= 0) {
-            state.balls.splice(i, 1);
+            gameState.balls.splice(i, 1);
             continue;
           }
         }
@@ -286,283 +241,238 @@ export const PongArithmeticGame = () => {
         ball.x += ball.vx * dt;
         ball.y += ball.vy * dt;
 
-        // Top/bottom wall collision
+        // Wall bounce
         if (ball.y - BALL_RADIUS <= 0 || ball.y + BALL_RADIUS >= canvas.height) {
           ball.vy = -ball.vy;
           ball.y = Math.max(BALL_RADIUS, Math.min(canvas.height - BALL_RADIUS, ball.y));
         }
 
-        // Player paddle collision (left)
+        // Player paddle collision
         if (ball.vx < 0 && !ball.dissolving) {
-          const paddleLeft = state.playerPaddle.x;
-          const paddleRight = state.playerPaddle.x + state.playerPaddle.width;
-          const paddleTop = state.playerPaddle.y;
-          const paddleBottom = state.playerPaddle.y + state.playerPaddle.height;
+          const px = gameState.playerPaddle.x;
+          const py = gameState.playerPaddle.y;
           
-          // Check if ball is within paddle bounds
-          if (ball.x - BALL_RADIUS <= paddleRight && 
-              ball.x - BALL_RADIUS >= paddleLeft &&
-              ball.y >= paddleTop - BALL_RADIUS &&
-              ball.y <= paddleBottom + BALL_RADIUS) {
+          if (ball.x - BALL_RADIUS <= px + PADDLE_WIDTH && 
+              ball.x - BALL_RADIUS >= px &&
+              ball.y >= py - BALL_RADIUS &&
+              ball.y <= py + PADDLE_HEIGHT + BALL_RADIUS) {
             
-            // Calculate bounce angle based on where ball hits paddle
-            const relativeY = (ball.y - (state.playerPaddle.y + state.playerPaddle.height / 2)) / (state.playerPaddle.height / 2);
-            const bounceAngle = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, relativeY * Math.PI / 3)); // Max 60 degree angle
+            const relY = (ball.y - (py + PADDLE_HEIGHT / 2)) / (PADDLE_HEIGHT / 2);
+            const angle = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, relY * Math.PI / 3));
             
-            // Check if correct or wrong ball BEFORE bouncing
-            if (ball.number > 0) { // Numbered ball
+            if (ball.number > 0) {
               if (ball.isCorrect) {
-                // Correct return - destroy all wrong balls instantly
-                state.score += 1000;
-                setScore(state.score);
+                gameState.score += 1000;
+                setScore(gameState.score);
+                gameState.flashColor = 'green';
+                gameState.flashTimer = 30;
                 
-                // Flash green
-                state.flashColor = 'green';
-                state.flashTimer = 30; // 0.5 seconds at 60fps
-                
-                // Remove all wrong balls (keep only correct ball)
-                for (let j = state.balls.length - 1; j >= 0; j--) {
-                  if (j !== i && !state.balls[j].isCorrect) {
-                    state.balls.splice(j, 1);
+                // Remove wrong balls
+                for (let j = gameState.balls.length - 1; j >= 0; j--) {
+                  if (j !== i && !gameState.balls[j].isCorrect) {
+                    gameState.balls.splice(j, 1);
+                    if (j < i) i--;
                   }
                 }
                 
-                // Reset correct ball to regular ball and bounce it back
                 ball.number = 0;
                 ball.isCorrect = false;
-                
-                // Clear problem
-                state.currentProblem = null;
+                gameState.currentProblem = null;
                 setCurrentProblem(null);
               } else {
-                // Wrong return - lose points and dissolve (don't bounce)
-                state.score = Math.max(0, state.score - 50);
-                setScore(state.score);
-                
-                // Flash red
-                state.flashColor = 'red';
-                state.flashTimer = 30; // 0.5 seconds at 60fps
-                
+                gameState.score = Math.max(0, gameState.score - 50);
+                setScore(gameState.score);
+                gameState.flashColor = 'red';
+                gameState.flashTimer = 30;
                 ball.dissolving = true;
-                continue; // Skip bounce for wrong ball
+                continue;
               }
             }
             
-            // Bounce the ball (for correct ball or regular ball)
-            ball.vx = Math.abs(Math.cos(bounceAngle) * BALL_SPEED);
-            ball.vy = Math.sin(bounceAngle) * BALL_SPEED;
-            ball.x = paddleRight + BALL_RADIUS;
+            ball.vx = Math.abs(Math.cos(angle) * BALL_SPEED);
+            ball.vy = Math.sin(angle) * BALL_SPEED;
+            ball.x = px + PADDLE_WIDTH + BALL_RADIUS;
           }
         }
 
-        // Enemy paddle collision (right)
+        // Enemy paddle collision
         if (ball.vx > 0 && !ball.dissolving) {
-          const paddleLeft = state.enemyPaddle.x;
-          const paddleRight = state.enemyPaddle.x + state.enemyPaddle.width;
-          const paddleTop = state.enemyPaddle.y;
-          const paddleBottom = state.enemyPaddle.y + state.enemyPaddle.height;
+          const px = gameState.enemyPaddle.x;
+          const py = gameState.enemyPaddle.y;
           
-          // Check if ball is within paddle bounds
-          if (ball.x + BALL_RADIUS >= paddleLeft && 
-              ball.x + BALL_RADIUS <= paddleRight &&
-              ball.y >= paddleTop - BALL_RADIUS &&
-              ball.y <= paddleBottom + BALL_RADIUS) {
+          if (ball.x + BALL_RADIUS >= px && 
+              ball.x + BALL_RADIUS <= px + PADDLE_WIDTH &&
+              ball.y >= py - BALL_RADIUS &&
+              ball.y <= py + PADDLE_HEIGHT + BALL_RADIUS) {
             
-            // Calculate bounce angle
-            const relativeY = (ball.y - (state.enemyPaddle.y + state.enemyPaddle.height / 2)) / (state.enemyPaddle.height / 2);
-            const bounceAngle = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, relativeY * Math.PI / 3));
+            const relY = (ball.y - (py + PADDLE_HEIGHT / 2)) / (PADDLE_HEIGHT / 2);
+            const angle = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, relY * Math.PI / 3));
             
-            ball.vx = -Math.abs(Math.cos(bounceAngle) * BALL_SPEED);
-            ball.vy = Math.sin(bounceAngle) * BALL_SPEED;
-            ball.x = paddleLeft - BALL_RADIUS;
+            ball.vx = -Math.abs(Math.cos(angle) * BALL_SPEED);
+            ball.vy = Math.sin(angle) * BALL_SPEED;
+            ball.x = px - BALL_RADIUS;
 
-            // If ball has no number, split it
             if (ball.number === 0) {
               const ballToSplit = { ...ball };
-              state.balls.splice(i, 1); // Remove original ball
+              gameState.balls.splice(i, 1);
               splitBall(ballToSplit);
               continue;
             }
           }
         }
 
-        // Left wall collision (player missed)
+        // Left wall (missed)
         if (ball.x - BALL_RADIUS <= 0 && !ball.dissolving) {
           if (ball.isCorrect && ball.number > 0) {
-            // Player missed correct ball - lose points and flash red
-            state.score = Math.max(0, state.score - 50);
-            setScore(state.score);
-            
-            // Flash red
-            state.flashColor = 'red';
-            state.flashTimer = 30; // 0.5 seconds at 60fps
-            
-            // Remove all balls and spawn new one
-            state.balls = [];
-            state.currentProblem = null;
-            setCurrentProblem(null);
-            setTimeout(() => spawnBall(canvas), 100);
-            break; // Break out of loop since we cleared the array
+            gameState.score = Math.max(0, gameState.score - 50);
+            setScore(gameState.score);
+            gameState.flashColor = 'red';
+            gameState.flashTimer = 30;
+            spawnBall();
+            break;
           } else if (ball.number > 0) {
-            // Wrong ball hit left wall - just remove it silently, no penalty
-            state.balls.splice(i, 1);
+            gameState.balls.splice(i, 1);
             continue;
           } else {
-            // Regular ball hit left wall - remove and spawn new one
-            state.balls = [];
-            state.currentProblem = null;
-            setCurrentProblem(null);
-            setTimeout(() => spawnBall(canvas), 100);
+            spawnBall();
             break;
           }
         }
 
-        // Right wall collision (shouldn't happen with perfect AI, but handle it)
+        // Right wall (shouldn't happen)
         if (ball.x + BALL_RADIUS >= canvas.width && !ball.dissolving) {
           ball.vx = -ball.vx;
           ball.x = canvas.width - BALL_RADIUS;
         }
       }
 
-      // Timer countdown
-      state.timeRemaining -= dt / 60;
-      if (state.timeRemaining <= 0) {
-        state.timeRemaining = 0;
+      // Timer
+      gameState.timeRemaining -= dt / 60;
+      if (gameState.timeRemaining <= 0) {
+        gameState.timeRemaining = 0;
         setTimeRemaining(0);
         endGame();
-      } else {
-        setTimeRemaining(Math.ceil(state.timeRemaining));
+        return;
       }
-    };
+      setTimeRemaining(Math.ceil(gameState.timeRemaining));
 
-    const draw = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Dark background
+      // Draw
       ctx.fillStyle = '#050510';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Center dividing line (dashed)
-      ctx.strokeStyle = '#333344';
+      // Center line
+      ctx.strokeStyle = '#333';
       ctx.lineWidth = 2;
-      ctx.setLineDash([10, 10]);
+      ctx.setLineDash([8, 8]);
       ctx.beginPath();
       ctx.moveTo(canvas.width / 2, 0);
       ctx.lineTo(canvas.width / 2, canvas.height);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      const state = gameState.current;
-
-      // Draw flash overlay if active
-      if (state.flashTimer > 0 && state.flashColor) {
-        const alpha = Math.min(0.4, state.flashTimer / 30 * 0.4); // Fade out over time
-        ctx.fillStyle = state.flashColor === 'red' ? `rgba(255, 0, 0, ${alpha})` : `rgba(0, 255, 0, ${alpha})`;
+      // Flash overlay
+      if (gameState.flashTimer > 0 && gameState.flashColor) {
+        const alpha = Math.min(0.4, gameState.flashTimer / 30 * 0.4);
+        ctx.fillStyle = gameState.flashColor === 'red' ? `rgba(255,0,0,${alpha})` : `rgba(0,255,0,${alpha})`;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
-      // Draw paddles
+      // Paddles
       ctx.fillStyle = '#00f3ff';
-      ctx.fillRect(
-        state.playerPaddle.x,
-        state.playerPaddle.y,
-        state.playerPaddle.width,
-        state.playerPaddle.height
-      );
-
+      ctx.fillRect(gameState.playerPaddle.x, gameState.playerPaddle.y, PADDLE_WIDTH, PADDLE_HEIGHT);
       ctx.fillStyle = '#ff00ff';
-      ctx.fillRect(
-        state.enemyPaddle.x,
-        state.enemyPaddle.y,
-        state.enemyPaddle.width,
-        state.enemyPaddle.height
-      );
+      ctx.fillRect(gameState.enemyPaddle.x, gameState.enemyPaddle.y, PADDLE_WIDTH, PADDLE_HEIGHT);
 
-      // Draw balls
-      state.balls.forEach(ball => {
+      // Balls
+      gameState.balls.forEach(ball => {
         ctx.save();
         ctx.globalAlpha = ball.alpha;
-        
-        // Ball circle - all balls same color (white) so player must solve math
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
         ctx.fill();
 
-        // Number on ball
         if (ball.number > 0) {
-          ctx.font = 'bold 14px "Press Start 2P"';
+          ctx.font = 'bold 12px "Press Start 2P"';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          
-          // Draw text with stroke for better contrast
-          ctx.strokeStyle = '#000000';
-          ctx.lineWidth = 3;
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 2;
           ctx.strokeText(ball.number.toString(), ball.x, ball.y);
-          
-          // Fill with bright color for high contrast
-          ctx.fillStyle = '#00f3ff'; // Neon cyan
+          ctx.fillStyle = '#00f3ff';
           ctx.fillText(ball.number.toString(), ball.x, ball.y);
         }
-
         ctx.restore();
       });
+
+      animationIdRef.current = requestAnimationFrame(loop);
     };
 
-    const endGame = () => {
-      gameState.current.active = false;
-      setGameOver(true);
-      if (animationId !== null) {
-        cancelAnimationFrame(animationId);
-      }
-    };
-
-    animationId = requestAnimationFrame(loop);
+    gameState.active = true;
+    animationIdRef.current = requestAnimationFrame(loop);
+    setTimeout(() => canvas.focus(), 100);
 
     return () => {
-      // Stop game loop
-      if (animationId !== null) {
-        cancelAnimationFrame(animationId);
+      gameState.active = false;
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+        animationIdRef.current = null;
       }
-      
-      // Deactivate game
-      gameState.current.active = false;
-      
-      // Remove event listeners
       canvas.removeEventListener('focus', handleFocus);
       canvas.removeEventListener('blur', handleBlur);
-      canvas.removeEventListener('click', handleCanvasClick);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      
-      // Reset state
-      resetGameState();
     };
-  }, []);
+  }, [gameStarted, gameOver]);
+
+  if (!gameStarted) {
+    return (
+      <GameFrame title="PONG ARITHMETIC" score={0} lives={0} timeRemaining={60} aspectRatio={16/9}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90">
+          <h1 className="text-2xl text-neon-cyan font-['Press_Start_2P'] mb-4 animate-pulse">
+            PONG
+          </h1>
+          <h2 className="text-sm text-neon-pink font-['Press_Start_2P'] mb-6">
+            ARITHMETIC
+          </h2>
+          
+          <div className="bg-gray-900/80 border-2 border-neon-cyan rounded-lg p-4 mb-6 max-w-sm text-left">
+            <h3 className="text-xs text-neon-yellow font-['Press_Start_2P'] mb-3 text-center">
+              HOW TO PLAY
+            </h3>
+            <ul className="text-[10px] text-gray-300 space-y-2">
+              <li>▸ Move: <span className="text-neon-green">W</span> (up) / <span className="text-neon-green">S</span> (down)</li>
+              <li>▸ Ball splits into <span className="text-neon-yellow">3 numbered balls</span></li>
+              <li>▸ Solve the <span className="text-neon-pink">equation</span> shown</li>
+              <li>▸ Hit the <span className="text-neon-green">correct answer</span> for points!</li>
+              <li>▸ Order of operations: × ÷ before + −</li>
+            </ul>
+          </div>
+
+          <button 
+            onClick={startGame}
+            className="px-6 py-3 bg-neon-cyan text-black font-['Press_Start_2P'] text-xs rounded hover:bg-cyan-400 hover:scale-105 transition-all"
+          >
+            START GAME
+          </button>
+        </div>
+      </GameFrame>
+    );
+  }
 
   if (gameOver) {
     return (
-      <GameFrame
-        title="PONG ARITHMETIC"
-        score={score}
-        lives={0}
-        timeRemaining={timeRemaining}
+      <GameFrame title="PONG ARITHMETIC" score={score} lives={0} timeRemaining={timeRemaining} aspectRatio={16/9}
         overlay={
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80">
-            <h2 className="text-4xl text-neon-pink font-pixel mb-4 animate-pulse">GAME OVER</h2>
-            <div className="text-2xl text-white font-pixel mb-8">SCORE: {score}</div>
+            <h2 className="text-3xl text-neon-pink font-['Press_Start_2P'] mb-4 animate-pulse">GAME OVER</h2>
+            <div className="text-xl text-white font-['Press_Start_2P'] mb-6">SCORE: {score}</div>
             
             <div className="flex gap-4">
-              <button
-                onClick={() => window.location.reload()}
-                className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white"
-              >
+              <button onClick={startGame} className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white text-xs">
                 RETRY
               </button>
-              <button
-                onClick={() => navigate('/results', { state: { score, game: 'Pong Arithmetic' } })}
-                className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white"
-              >
+              <button onClick={() => completeGame(score)} className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white text-xs">
                 CONTINUE
               </button>
             </div>
@@ -575,17 +485,15 @@ export const PongArithmeticGame = () => {
   }
 
   return (
-    <GameFrame title="PONG ARITHMETIC" score={score} lives={0} timeRemaining={timeRemaining}>
+    <GameFrame title="PONG ARITHMETIC" score={score} lives={0} timeRemaining={timeRemaining} aspectRatio={16/9}>
       <canvas ref={canvasRef} className="w-full h-full bg-transparent" />
       
-      {/* Math Problem Overlay */}
       {currentProblem && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-space-800/90 border border-neon-cyan px-6 py-3 rounded z-30">
-          <span className="text-gray-400 text-xs block text-center font-pixel mb-1">SOLVE:</span>
-          <span className="text-neon-cyan text-xl font-pixel">{currentProblem.equation} = ?</span>
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-space-800/90 border border-neon-cyan px-4 py-2 rounded z-30">
+          <span className="text-gray-400 text-[8px] block text-center font-['Press_Start_2P'] mb-0.5">SOLVE:</span>
+          <span className="text-neon-cyan text-base font-['Press_Start_2P']">{currentProblem.equation} = ?</span>
         </div>
       )}
     </GameFrame>
   );
 };
-

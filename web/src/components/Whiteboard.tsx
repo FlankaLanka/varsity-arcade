@@ -5,6 +5,7 @@ import { rtdb } from '../lib/firebase';
 import type { WhiteboardDrawing, CohortProblem, AIChatMessage } from '../types/cohort';
 import { throttle } from '../utils/throttle';
 import { verifySolution } from '../services/aiTutor';
+import { getUserColor } from '../utils/formatters';
 
 interface RemoteCursor {
   x: number;
@@ -107,7 +108,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
                 x: cursor.x || 0,
                 y: cursor.y || 0,
                 username: cursor.username || 'Unknown',
-                color: cursor.color || COLORS[0],
+                color: cursor.color || getUserColor(userId),
                 timestamp: cursorTimestamp
               };
             }
@@ -237,23 +238,31 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
     // Draw username label with background
     const labelPadding = 4;
     const labelHeight = 16;
+    const labelOffsetX = 12;
+    const labelOffsetY = -labelHeight - 2;
     ctx.font = '12px monospace';
     const textMetrics = ctx.measureText(username);
     const labelWidth = textMetrics.width + labelPadding * 2;
     
+    // Calculate label position
+    const labelX = x + labelOffsetX;
+    const labelY = y + labelOffsetY;
+    
     // Draw label background
     ctx.fillStyle = cursorColor;
-    ctx.fillRect(x + 12, y - labelHeight - 2, labelWidth, labelHeight);
+    ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
     
     // Draw label border
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 1;
-    ctx.strokeRect(x + 12, y - labelHeight - 2, labelWidth, labelHeight);
+    ctx.strokeRect(labelX, labelY, labelWidth, labelHeight);
     
-    // Draw username text
+    // Draw username text - vertically centered in the label
     ctx.fillStyle = '#FFFFFF';
     ctx.textBaseline = 'middle';
-    ctx.fillText(username, x + 12 + labelPadding, y - 2);
+    ctx.textAlign = 'left';
+    // Center text vertically: labelY + labelHeight/2
+    ctx.fillText(username, labelX + labelPadding, labelY + labelHeight / 2);
   };
 
   const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {

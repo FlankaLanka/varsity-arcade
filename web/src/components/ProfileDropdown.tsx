@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
-import { Trophy, Target, Flame, GamepadIcon, TrendingUp } from 'lucide-react';
+import { Trophy, Target, Flame, GamepadIcon, TrendingUp, Settings, User, LogOut } from 'lucide-react';
 import XPProgressBar from './XPProgressBar';
 import AchievementBadge from './AchievementBadge';
 import { useAuth } from '../context/AuthContext';
 import { getQuestProgressPercentage } from '../utils/xpSystem';
+import { getXPProgress } from '../utils/xpSystem';
 
 interface ProfileDropdownProps {
   isOpen: boolean;
@@ -31,10 +32,20 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
     navigate('/profile');
   };
 
+  const handleViewAllAchievements = () => {
+    onClose();
+    navigate('/profile'); // Navigate to profile which has achievements section
+  };
+
   const handleLogout = () => {
     onClose();
     logout();
   };
+
+  // Calculate stats
+  const unlockedAchievementsCount = userProfile.achievements.filter(a => a.isUnlocked).length;
+  const totalAchievementsCount = userProfile.achievements.length;
+  const xpProgress = getXPProgress(userProfile.totalXP, userProfile.level);
 
   // Default pixel art avatar
   const defaultAvatar = (
@@ -155,26 +166,27 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-xs font-['Press_Start_2P'] text-neon-yellow flex items-center gap-2">
               <Trophy className="w-3 h-3" />
-              Recent Achievements
+              Achievements ({unlockedAchievementsCount}/{totalAchievementsCount})
             </h4>
             <button 
               className="text-xs text-gray-400 hover:text-neon-cyan transition-colors"
-              onClick={() => {/* TODO: Navigate to achievements page */}}
+              onClick={handleViewAllAchievements}
             >
               View All
             </button>
           </div>
           <div className="flex gap-2 overflow-visible">
-            {recentAchievements.map(achievement => (
-              <AchievementBadge 
-                key={achievement.id}
-                achievement={achievement}
-                size="medium"
-              />
-            ))}
-            {recentAchievements.length === 0 && (
+            {recentAchievements.length > 0 ? (
+              recentAchievements.map(achievement => (
+                <AchievementBadge 
+                  key={achievement.id}
+                  achievement={achievement}
+                  size="medium"
+                />
+              ))
+            ) : (
               <p className="text-xs text-gray-500 italic">
-                No achievements yet. Keep playing!
+                No achievements unlocked yet. Play games to earn achievements!
               </p>
             )}
           </div>
@@ -233,15 +245,17 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
         <div className="p-3 bg-gray-800/50 flex-shrink-0">
           <div className="grid grid-cols-2 gap-2">
             <button 
-              className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-gray-300 hover:bg-gray-800 hover:border-neon-cyan transition-all"
+              className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-gray-300 hover:bg-gray-800 hover:border-neon-cyan transition-all flex items-center justify-center gap-2"
               onClick={handleProfileNavigation}
             >
+              <User className="w-3 h-3" />
               Profile
             </button>
             <button 
-              className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-gray-300 hover:bg-gray-800 hover:border-neon-pink transition-all"
+              className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-red-400 hover:bg-red-900/30 hover:border-red-500 transition-all flex items-center justify-center gap-2"
               onClick={handleLogout}
             >
+              <LogOut className="w-3 h-3" />
               Logout
             </button>
           </div>

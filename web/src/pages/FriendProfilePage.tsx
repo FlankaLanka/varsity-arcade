@@ -12,6 +12,7 @@ const gameLabels: Record<GameType, { label: string; icon: string; accent: string
   'asteroids': { label: 'Asteroids: Synonym Shooter', icon: '☄️', accent: 'text-purple-300' },
   'pacman-math': { label: 'Pac-Man: Math Blitz', icon: '👻', accent: 'text-yellow-300' },
   'ph-invaders': { label: 'pH Invaders', icon: '🧪', accent: 'text-green-300' },
+  'pong-arithmetic': { label: 'Pong Arithmetic', icon: '🏓', accent: 'text-orange-300' },
 };
 
 export function FriendProfilePage() {

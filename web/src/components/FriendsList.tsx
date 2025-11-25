@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { Users, UserPlus } from 'lucide-react';
 import FriendCard from './FriendCard';
 import { FriendDetailModal } from './FriendDetailModal';
+import AddFriendModal from './AddFriendModal';
 import { useAuth } from '../context/AuthContext';
+import { removeFriend } from '../services/firestore';
 import type { Friend } from '../types/user';
 
 interface FriendsListProps {
@@ -13,10 +15,11 @@ interface FriendsListProps {
 
 export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, firebaseUser, refreshUser } = useAuth();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
 
   useEffect(() => {
     if (user?.friends) {
@@ -37,16 +40,37 @@ export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
     setSelectedFriend(null);
   };
 
-  const handleRemoveFriend = (friendId: string) => {
-    // TODO: Implement Firestore service call
-    console.log('Removing friend:', friendId);
-    setFriends(prev => prev.filter(friend => friend.id !== friendId));
+  const handleRemoveFriend = async (friendId: string) => {
+    if (!firebaseUser) return;
+    
+    try {
+      await removeFriend(firebaseUser.uid, friendId);
+      setFriends(prev => prev.filter(friend => friend.id !== friendId));
+      // Refresh user data
+      if (refreshUser) {
+        await refreshUser();
+      }
+    } catch (error) {
+      console.error('Failed to remove friend:', error);
+    }
   };
 
-  const handleBlockFriend = (friendId: string) => {
-    // TODO: Implement Firestore service call
-    console.log('Blocking friend:', friendId);
-    setFriends(prev => prev.filter(friend => friend.id !== friendId));
+  const handleBlockFriend = async (friendId: string) => {
+    // For now, blocking is the same as removing
+    // In a full implementation, you'd also add to a blocked list
+    await handleRemoveFriend(friendId);
+  };
+
+  const handleOpenAddFriend = () => {
+    onClose(); // Close the friends list dropdown
+    setIsAddFriendModalOpen(true);
+  };
+
+  const handleFriendAdded = async () => {
+    // Refresh is handled in the modal, but we can also refresh here
+    if (refreshUser) {
+      await refreshUser();
+    }
   };
 
   return (
@@ -85,10 +109,7 @@ export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
               {/* Add Friend Button */}
               <button
                 className="p-1.5 bg-gray-900/50 border border-neon-pink/50 rounded hover:bg-neon-pink/20 hover:border-neon-pink transition-all"
-                onClick={() => {
-                  onClose();
-                  /* TODO: Open add friend modal */
-                }}
+                onClick={handleOpenAddFriend}
                 title="Add Friend"
               >
                 <UserPlus className="w-3 h-3 text-neon-pink" />
@@ -153,10 +174,7 @@ export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
               </p>
               <button
                 className="px-4 py-2 bg-neon-pink/20 border-2 border-neon-pink rounded text-xs font-['Press_Start_2P'] text-neon-pink hover:bg-neon-pink/30 transition-all"
-                onClick={() => {
-                  onClose();
-                  /* TODO: Open add friend modal */
-                }}
+                onClick={handleOpenAddFriend}
               >
                 Add Friend
               </button>
@@ -178,6 +196,13 @@ export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
         }}
         onRemove={handleRemoveFriend}
         onBlock={handleBlockFriend}
+      />
+
+      {/* Add Friend Modal */}
+      <AddFriendModal
+        isOpen={isAddFriendModalOpen}
+        onClose={() => setIsAddFriendModalOpen(false)}
+        onFriendAdded={handleFriendAdded}
       />
     </>
   );

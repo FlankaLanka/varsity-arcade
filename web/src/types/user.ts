@@ -51,8 +51,8 @@ export interface Friend {
   lastSeen: Date;
 }
 
-export type GameType = 'asteroids' | 'pacman-math' | 'ph-invaders';
-export type AchievementType = 'first-game' | 'score-milestone' | 'streak-milestone' | 'game-specific';
+export type GameType = 'asteroids' | 'pacman-math' | 'ph-invaders' | 'pong-arithmetic';
+export type AchievementType = 'first-game' | 'score-milestone' | 'streak-milestone' | 'game-specific' | 'cohort' | 'social' | 'level' | 'variety';
 export type QuestType = 'play-games' | 'score-milestone' | 'complete-variety' | 'maintain-streak';
 
 export interface GameStatSummary {
@@ -62,7 +62,7 @@ export interface GameStatSummary {
   totalXP: number;
 }
 
-export type ActivityType = 'game' | 'achievement' | 'xp' | 'level';
+export type ActivityType = 'game' | 'achievement' | 'xp' | 'level' | 'cohort-solve' | 'cohort-battle';
 
 export interface ActivityEntry {
   id: string;

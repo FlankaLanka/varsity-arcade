@@ -1,7 +1,47 @@
 # Progress Log
 
+## 2025-01-27 (Session 5)
+- **Authentication Fix**:
+  - Fixed login bug where password parameter wasn't being passed from `AuthPage` to `AuthContext.login()`.
+  - Updated `AuthPage.tsx` to correctly pass both `email` and `password` to login function.
+
+- **Whiteboard Nametag Improvements**:
+  - Fixed vertical alignment of username text within nametag label bar (adjusted y-coordinate in `drawCursor`).
+  - Added `getUserColor()` utility function in `formatters.ts` to generate consistent random colors based on user ID hash.
+  - Updated `Whiteboard.tsx` to use generated colors for remote cursors (with fallback if color not present).
+  - Updated `CohortRoomPage.tsx` to pass generated color to `currentUser` prop.
+
+- **Voice Chat Implementation (Disabled)**:
+  - Created `useVoiceChat.ts` hook with full WebRTC implementation:
+    - Microphone access and audio context setup (now disabled)
+    - Speaking detection with AnalyserNode and hysteresis thresholds
+    - Peer connection management with RTCPeerConnection
+    - Firebase signaling for WebRTC (offers, answers, ICE candidates)
+    - Remote audio playback with volume control via GainNode
+    - Mute/deafen controls synced to Firebase
+  - Updated `VoiceChatControls.tsx`:
+    - Removed visualizer/waves for mic input
+    - Reorganized layout to have mic toggle and volume slider side-by-side
+  - Updated `CohortMemberAvatars.tsx`:
+    - Added green outline with glow effect around speaking members' avatars
+  - **Feature Disabled**: Microphone access completely disabled per user request:
+    - No `getUserMedia()` calls
+    - `toggleMute()` is a no-op
+    - Mic buttons visible but non-functional
+    - No microphone permission requests
+
+## 2025-01-27 (Session 4)
+- **Leaderboard Page Updates**:
+  - Added all four games as filter options: Asteroids, Pac-Man, pH Invaders, Pong Arithmetic
+  - Removed "All Games" aggregate leaderboard option
+  - Updated game type display names to match game names (ASTEROIDS, PAC-MAN, PH INVADERS, PONG ARITHMETIC)
+- **Pong Arithmetic Rename**: Renamed "Pong Math" to "Pong Arithmetic" throughout codebase
+  - Updated component name from `PongMathGame` to `PongArithmeticGame`
+  - Updated route from `/game/pong-math` to `/game/pong-arithmetic`
+  - Updated all references in UI and code
+
 ## 2025-11-24 (Session 3)
-- **Pong Math Game Implementation**: Created new educational Pong game with order of operations mechanics
+- **Pong Math Game Implementation** (later renamed to Pong Arithmetic): Created new educational Pong game with order of operations mechanics
   - Player paddle on left (W/S keys), AI paddle on right (perfect tracking)
   - Ball splits into 3 numbered balls when hitting AI paddle
   - Easy order of operations problems (e.g., "2 + 3 × 4", "(5 + 2) × 3")
@@ -10,7 +50,7 @@
   - Wrong balls dissolve when returned, correct ball destroys all wrong balls and bounces back
   - Minimalistic pixel UI with center dividing line
   - Game state reset on mount/unmount to prevent stale state
-  - Added route `/game/pong-math` and game card to Arcade Hub
+  - Added route `/game/pong-math` (later changed to `/game/pong-arithmetic`) and game card to Arcade Hub
 
 ## 2025-11-24 (Session 2)
 - **Projectile Sync Fix**: Fixed bug where clicking to shoot would make all characters fire. Now only the local player's character shoots; each client writes their own projectiles to Firebase.
@@ -224,4 +264,4 @@
 2. ✅ **Pac-Man: Math Blitz** - Math problem-solving maze game
 3. ✅ **pH Invaders** - Chemistry pH management with Space Invaders gameplay
 4. ✅ **Whiteboard Battle** - Collaborative defense shooter using user drawings
-5. ✅ **Pong Math** - Order of operations math game with classic Pong mechanics
+5. ✅ **Pong Arithmetic** (formerly "Pong Math") - Order of operations math game with classic Pong mechanics

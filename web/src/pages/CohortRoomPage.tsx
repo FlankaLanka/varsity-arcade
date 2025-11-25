@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { deleteCohort, leaveCohort, getUserProfile } from '../services/firestore';
+import { deleteCohort, getUserProfile, grantCohortSolveXP, grantBattleWinXP, getUserCohortStats } from '../services/firestore';
 import type { Cohort, CohortMember, WhiteboardDrawing, CohortProblem } from '../types/cohort';
 import type { UserProfile } from '../types/user';
 import Whiteboard from '../components/Whiteboard';
@@ -9,17 +9,21 @@ import VoiceChatControls from '../components/VoiceChatControls';
 import CohortMemberAvatars from '../components/CohortMemberAvatars';
 import AIChatInterface from '../components/AIChatInterface';
 import { useAuth } from '../context/AuthContext';
+import { useAchievements } from '../context/AchievementContext';
 import { rtdb } from '../lib/firebase';
 import { ref, onValue, remove, onDisconnect, set } from 'firebase/database';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Trash2, HelpCircle, Lightbulb } from 'lucide-react';
 import { getRandomProblem, getNextProblem } from '../data/problemBank';
+import { getUserColor } from '../utils/formatters';
+import { useVoiceChat } from '../hooks/useVoiceChat';
+import { checkNewAchievements, unlockAchievements } from '../services/achievements';
 
 export default function CohortRoomPage() {
   const { cohortId } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [cohort, setCohort] = useState<Cohort | null>(null);
   const [members, setMembers] = useState<CohortMember[]>([]);
   const [mode, setMode] = useState<'whiteboard' | 'battle'>('whiteboard');
@@ -31,6 +35,17 @@ export default function CohortRoomPage() {
   const [, setSnapshotReady] = useState(false);
   const [currentProblem, setCurrentProblem] = useState<CohortProblem | null>(null);
   const [showHint, setShowHint] = useState(false);
+  const [speakingMembers, setSpeakingMembers] = useState<Set<string>>(new Set());
+
+  // Voice chat hook - only initialize when we have user and cohortId
+  const voiceChat = useVoiceChat({
+    cohortId: cohortId || '',
+    userId: user?.id || '',
+    onSpeakingLevelChange: () => {} // Can be used for additional UI feedback if needed
+  });
+
+  // Achievement context for showing popups
+  const { showAchievements, showLevelUp } = useAchievements();
 
   // Wrapper to store the snapshot function in a ref and trigger re-render
   const handleSnapshotRequest = useCallback((fn: () => Promise<string | null>) => {
@@ -109,6 +124,25 @@ export default function CohortRoomPage() {
 
     return () => unsubscribe();
   }, [cohortId, cohort]);
+
+  // Listen to speaking members from Firebase
+  useEffect(() => {
+    if (!cohortId) return;
+
+    const speakingRef = ref(rtdb, `cohorts/${cohortId}/voice/speaking`);
+    
+    const unsubscribe = onValue(speakingRef, (snapshot) => {
+      const speakingData = snapshot.val();
+      if (speakingData) {
+        const speakingUserIds = Object.keys(speakingData);
+        setSpeakingMembers(new Set(speakingUserIds));
+      } else {
+        setSpeakingMembers(new Set());
+      }
+    });
+
+    return () => unsubscribe();
+  }, [cohortId]);
 
   // Listen to cohort changes in Firestore to update cohort data (but not members directly)
   useEffect(() => {
@@ -213,6 +247,32 @@ export default function CohortRoomPage() {
     if (!cohortId || !user?.id) return;
     
     try {
+      // Grant XP for solving the problem
+      const { newLevel, updatedProfile } = await grantCohortSolveXP(user.id);
+      
+      if (newLevel) {
+        showLevelUp(newLevel);
+      }
+      
+      // Check for achievements
+      if (updatedProfile) {
+        const cohortStats = await getUserCohortStats(user.id);
+        const newAchievements = checkNewAchievements(updatedProfile, {
+          cohortSolves: cohortStats.solves,
+          battleWins: cohortStats.battleWins
+        });
+        
+        if (newAchievements.length > 0) {
+          const { unlockedAchievements } = await unlockAchievements(user.id, newAchievements);
+          if (unlockedAchievements.length > 0) {
+            showAchievements(unlockedAchievements);
+          }
+        }
+      }
+
+      // Refresh user profile to update local state
+      await refreshUser();
+
       // Update game state in RTDB so all users see the battle start
       const gameStateRef = ref(rtdb, `cohorts/${cohortId}/gameState`);
       await set(gameStateRef, {
@@ -229,12 +289,40 @@ export default function CohortRoomPage() {
     }
   };
 
-  const handleBattleEnd = async () => {
+  const handleBattleEnd = async (victory: boolean = false) => {
     if (!cohortId || !cohort) return;
     
     setLoadingNewQuestion(true);
     
     try {
+      // Grant XP for battle victory
+      if (victory && user?.id) {
+        const { newLevel, updatedProfile } = await grantBattleWinXP(user.id);
+        
+        if (newLevel) {
+          showLevelUp(newLevel);
+        }
+        
+        // Check for achievements
+        if (updatedProfile) {
+          const cohortStats = await getUserCohortStats(user.id);
+          const newAchievements = checkNewAchievements(updatedProfile, {
+            cohortSolves: cohortStats.solves,
+            battleWins: cohortStats.battleWins
+          });
+          
+          if (newAchievements.length > 0) {
+            const { unlockedAchievements } = await unlockAchievements(user.id, newAchievements);
+            if (unlockedAchievements.length > 0) {
+              showAchievements(unlockedAchievements);
+            }
+          }
+        }
+
+        // Refresh user profile to update local state
+        await refreshUser();
+      }
+
       // 1. Update game state to return to whiteboard
       const gameStateRef = ref(rtdb, `cohorts/${cohortId}/gameState`);
       await set(gameStateRef, {
@@ -443,11 +531,26 @@ export default function CohortRoomPage() {
             <div className="p-3 border-b border-gray-800">
               <h3 className="text-xs font-['Press_Start_2P'] text-neon-purple">MEMBERS ({members.length})</h3>
             </div>
-            <CohortMemberAvatars members={members} mode={mode} memberHealths={memberHealths} />
+            <CohortMemberAvatars 
+              members={members} 
+              mode={mode} 
+              memberHealths={memberHealths}
+              speakingMembers={speakingMembers}
+            />
             
             {/* Voice Chat Controls */}
             <div className="p-3 border-t border-gray-800 mt-auto">
-              <VoiceChatControls />
+              <VoiceChatControls
+                isMuted={voiceChat.isMuted}
+                isDeafened={voiceChat.isDeafened}
+                micVolume={voiceChat.micVolume}
+                outputVolume={voiceChat.outputVolume}
+                speakingLevel={voiceChat.speakingLevel}
+                onToggleMute={voiceChat.toggleMute}
+                onToggleDeafen={voiceChat.toggleDeafen}
+                onMicVolumeChange={voiceChat.setMicVolume}
+                onOutputVolumeChange={voiceChat.setOutputVolume}
+              />
             </div>
           </div>
 
@@ -460,7 +563,7 @@ export default function CohortRoomPage() {
                 currentUser={user ? {
                   id: user.id,
                   username: user.username,
-                  color: ['#FFFFFF', '#FF0055', '#00FFFF', '#55FF00', '#FFFF00'][Math.abs(user.id.charCodeAt(0)) % 5]
+                  color: getUserColor(user.id)
                 } : undefined}
                 onSnapshotRequest={handleSnapshotRequest}
                 currentProblem={currentProblem}

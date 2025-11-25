@@ -6,7 +6,7 @@ import AchievementBadge from '../components/AchievementBadge';
 import FriendCard from '../components/FriendCard';
 import { FriendDetailModal } from '../components/FriendDetailModal';
 import { useAuth } from '../context/AuthContext';
-import { getQuestProgressPercentage } from '../utils/xpSystem'; // Need to move this helper if it was in data
+import { removeFriend } from '../services/firestore';
 import type { Achievement, Friend, ActivityEntry, GameType } from '../types/user';
 
 // Helper to calculate quest progress since we removed the mock data file
@@ -22,11 +22,12 @@ const gameLabels: Record<GameType, { label: string; icon: string; accent: string
   'asteroids': { label: 'Asteroids: Synonym Shooter', icon: '☄️', accent: 'text-purple-300' },
   'pacman-math': { label: 'Pac-Man: Math Blitz', icon: '👻', accent: 'text-yellow-300' },
   'ph-invaders': { label: 'pH Invaders', icon: '🧪', accent: 'text-green-300' },
+  'pong-arithmetic': { label: 'Pong Arithmetic', icon: '🏓', accent: 'text-orange-300' },
 };
 
 export function ProfilePage() {
   const navigate = useNavigate();
-  const { user: userProfile, logout } = useAuth();
+  const { user: userProfile, firebaseUser, logout, refreshUser } = useAuth();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
@@ -92,17 +93,24 @@ export function ProfilePage() {
     setIsFriendModalOpen(false);
   };
 
-  const handleRemoveFriend = (friendId: string) => {
-    // TODO: Implement with Firestore service
-    console.log('Remove friend', friendId);
-    // Optimistic update
-    setFriends(prev => prev.filter(friend => friend.id !== friendId));
+  const handleRemoveFriend = async (friendId: string) => {
+    if (!firebaseUser) return;
+    
+    try {
+      await removeFriend(firebaseUser.uid, friendId);
+      setFriends(prev => prev.filter(friend => friend.id !== friendId));
+      // Refresh user data
+      if (refreshUser) {
+        await refreshUser();
+      }
+    } catch (error) {
+      console.error('Failed to remove friend:', error);
+    }
   };
 
-  const handleBlockFriend = (friendId: string) => {
-    // TODO: Implement with Firestore service
-    console.log('Block friend', friendId);
-    setFriends(prev => prev.filter(friend => friend.id !== friendId));
+  const handleBlockFriend = async (friendId: string) => {
+    // For now, blocking is the same as removing
+    await handleRemoveFriend(friendId);
   };
 
   return (

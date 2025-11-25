@@ -1,6 +1,6 @@
 # Active Context
 
-_Last updated: 2025-11-24 (Session 3)_
+_Last updated: 2025-01-27 (Session 5)_
 
 ## Current Focus
 - **Firebase-Only Architecture**: All multiplayer state (whiteboard drawings, cursors, battle gameplay) uses Firebase Realtime Database. Battle uses a host-based model where one client runs the authoritative simulation.
@@ -12,11 +12,28 @@ _Last updated: 2025-11-24 (Session 3)_
   - **Pac-Man: Math Blitz** - Math problem-solving with classic Pac-Man mechanics
   - **pH Invaders** - Chemistry education with Space Invaders gameplay
   - **Whiteboard Battle** - Collaborative drawing turned into a cooperative defense shooter
-  - **Pong Math** - Order of operations math game with classic Pong mechanics
+  - **Pong Arithmetic** - Order of operations math game with classic Pong mechanics (renamed from "Pong Math")
 - **Cohort System** - Complete implementation of cohort creation, joining, room layout, and whiteboard-to-battle workflow.
 - **User Profile & Social System** - Complete profile page, XP progression, achievements, friends list with modals.
 
 ## Recently Completed
+- **Authentication Fix**:
+  - Fixed login issue where password wasn't being passed to `login` function in `AuthContext`.
+  - Updated `AuthPage.tsx` to pass both `email` and `password` to login function.
+
+- **Whiteboard UI Improvements**:
+  - Fixed nametag alignment issue where username text wasn't vertically centered in the label bar.
+  - Implemented random color generation for user nametags using `getUserColor()` utility function.
+  - Each user gets a consistent, randomly assigned color based on their user ID hash.
+
+- **Voice Chat Implementation (Currently Disabled)**:
+  - Created `useVoiceChat` hook with WebRTC peer connection management.
+  - Implemented Firebase signaling for WebRTC offers, answers, and ICE candidates.
+  - Added speaking detection with hysteresis to prevent rapid toggling.
+  - Implemented mute/deafen controls and volume sliders.
+  - Added green outline around speaking members' avatars in member list.
+  - **Currently Disabled**: Microphone access is disabled; mic buttons are no-ops. No microphone permission requests are made.
+
 - **Authentication System**:
   - Created `AuthContext` to manage user state (login/logout/signup).
   - Implemented `AuthPage` with toggleable Login/Sign-up forms.
@@ -82,7 +99,10 @@ _Last updated: 2025-11-24 (Session 3)_
   - Game-specific thumbnail on homepage
   
 - **Arcade Hub** with game-specific thumbnails and game selection cards
-- **Leaderboard** page with synthetic data
+- **Leaderboard** page with synthetic data:
+  - All four games available as filters: Asteroids, Pac-Man, pH Invaders, Pong Arithmetic
+  - "All Games" option removed (no aggregate leaderboard)
+  - Game type display names properly mapped (ASTEROIDS, PAC-MAN, PH INVADERS, PONG ARITHMETIC)
 - **Results** page for game completion
 - **Starfield Background** with mouse-reactive parallax effect
 - **Profile System**:
@@ -101,7 +121,7 @@ _Last updated: 2025-11-24 (Session 3)_
   - Friend cards with click handlers to open modals
   - Mock friend data with online status and current activity tracking
 
-- **Pong Math Game**:
+- **Pong Arithmetic Game** (formerly "Pong Math"):
   - Classic Pong gameplay with educational twist (order of operations math problems)
   - Player paddle on left (W/S keys only), AI paddle on right (perfect tracking)
   - Ball splits into 3 numbered balls when hitting AI paddle

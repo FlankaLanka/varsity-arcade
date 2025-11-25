@@ -6,9 +6,10 @@ interface CohortMemberAvatarsProps {
   members: CohortMember[];
   mode: 'whiteboard' | 'battle';
   memberHealths?: Record<string, number>;
+  speakingMembers?: Set<string>;
 }
 
-export default function CohortMemberAvatars({ members, mode, memberHealths }: CohortMemberAvatarsProps) {
+export default function CohortMemberAvatars({ members, mode, memberHealths, speakingMembers = new Set() }: CohortMemberAvatarsProps) {
   return (
     <div className="flex-1 overflow-y-auto p-3 space-y-3">
       {members.map(member => (
@@ -22,10 +23,18 @@ export default function CohortMemberAvatars({ members, mode, memberHealths }: Co
               <img 
                 src={member.avatar} 
                 alt={member.username} 
-                className="w-8 h-8 rounded-full bg-gray-700 object-cover border border-gray-600"
+                className={`w-8 h-8 rounded-full bg-gray-700 object-cover border-2 transition-all ${
+                  speakingMembers.has(member.userId)
+                    ? 'border-neon-green shadow-[0_0_8px_rgba(41,255,100,0.6)]'
+                    : 'border-gray-600'
+                }`}
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center border border-gray-600">
+              <div className={`w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center border-2 transition-all ${
+                speakingMembers.has(member.userId)
+                  ? 'border-neon-green shadow-[0_0_8px_rgba(41,255,100,0.6)]'
+                  : 'border-gray-600'
+              }`}>
                 <User size={14} className="text-gray-400" />
               </div>
             )}

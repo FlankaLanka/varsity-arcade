@@ -7,9 +7,10 @@ import {
   updateProfile,
   type User
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import type { UserProfile } from '../types/user';
+import { getAllAchievementsLocked } from '../data/achievements';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -19,6 +20,7 @@ interface AuthContextType {
   login: (email: string, password?: string) => Promise<void>;
   signup: (data: SignupData) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 export interface SignupData {
@@ -45,7 +47,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const userDoc = await getDoc(userDocRef);
           
           if (userDoc.exists()) {
-            setUser(userDoc.data() as UserProfile);
+            const userData = userDoc.data() as UserProfile;
+            let needsUpdate = false;
+            const updates: Record<string, any> = {};
+            
+            // If user has no achievements or empty achievements, populate with all locked achievements
+            if (!userData.achievements || userData.achievements.length === 0) {
+              const allAchievements = getAllAchievementsLocked();
+              updates.achievements = allAchievements;
+              userData.achievements = allAchievements;
+              needsUpdate = true;
+            }
+            
+            // Ensure all game stats exist (for users created before pong-arithmetic was added)
+            const defaultGameStats = { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 };
+            const gameTypes = ['asteroids', 'pacman-math', 'ph-invaders', 'pong-arithmetic'] as const;
+            
+            if (!userData.gameStats) {
+              userData.gameStats = {} as UserProfile['gameStats'];
+            }
+            
+            for (const gameType of gameTypes) {
+              if (!userData.gameStats[gameType]) {
+                userData.gameStats[gameType] = { ...defaultGameStats };
+                updates[`gameStats.${gameType}`] = defaultGameStats;
+                needsUpdate = true;
+              }
+            }
+            
+            // Apply updates if needed
+            if (needsUpdate) {
+              await updateDoc(userDocRef, updates);
+            }
+            
+            setUser(userData);
           } else {
             // Fallback or create if missing (should be handled in signup)
             console.warn('User document not found for authenticated user');
@@ -81,7 +116,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       displayName: data.username
     });
 
-    // 3. Create Firestore User Document
+    // 3. Create Firestore User Document with all achievements initialized as locked
+    const allAchievements = getAllAchievementsLocked();
+    
     const newUserProfile: UserProfile = {
       id: firebaseUser.uid,
       username: data.username,
@@ -91,13 +128,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       gamesPlayed: 0,
       totalScore: 0,
       gamesCompleted: 0,
-      achievements: [],
+      achievements: allAchievements,
       dailyQuests: [], // Could initialize with some default quests if defined elsewhere
       friends: [],
       gameStats: {
         'asteroids': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
         'pacman-math': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
         'ph-invaders': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
+        'pong-arithmetic': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
       },
       activityHistory: []
     };
@@ -112,6 +150,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setFirebaseUser(null);
   };
 
+  const refreshUser = async () => {
+    if (!firebaseUser) return;
+    
+    try {
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (userDoc.exists()) {
+        setUser(userDoc.data() as UserProfile);
+      }
+    } catch (error) {
+      console.error("Error refreshing user profile:", error);
+    }
+  };
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -120,7 +173,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       login, 
       signup, 
-      logout 
+      logout,
+      refreshUser
     }}>
       {!isLoading && children}
     </AuthContext.Provider>

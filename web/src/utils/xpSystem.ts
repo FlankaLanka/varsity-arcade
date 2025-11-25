@@ -12,10 +12,11 @@ import type { GameType, AchievementType, QuestType, DailyQuest } from '../types/
  * Different games have different XP rates based on difficulty
  */
 export function calculateXPFromScore(score: number, gameType: GameType): number {
-  const xpRates = {
+  const xpRates: Record<GameType, number> = {
     'asteroids': 0.01,        // 100 points = 1 XP
     'pacman-math': 0.015,     // 100 points = 1.5 XP (slightly higher for math)
     'ph-invaders': 0.012,     // 100 points = 1.2 XP
+    'pong-arithmetic': 0.015, // 100 points = 1.5 XP (educational game)
   };
 
   const rate = xpRates[gameType] || 0.01;
@@ -27,10 +28,11 @@ export function calculateXPFromScore(score: number, gameType: GameType): number 
  * Completion bonus encourages finishing games rather than quitting
  */
 export function calculateXPFromCompletion(gameType: GameType): number {
-  const completionBonuses = {
+  const completionBonuses: Record<GameType, number> = {
     'asteroids': 50,
     'pacman-math': 75,     // Higher bonus for educational games
     'ph-invaders': 75,
+    'pong-arithmetic': 75, // Higher bonus for educational games
   };
 
   return completionBonuses[gameType] || 50;
@@ -40,11 +42,15 @@ export function calculateXPFromCompletion(gameType: GameType): number {
  * Calculate XP reward for unlocking an achievement
  */
 export function calculateXPFromAchievement(achievementType: AchievementType): number {
-  const achievementRewards = {
+  const achievementRewards: Record<AchievementType, number> = {
     'first-game': 100,
     'score-milestone': 200,
     'streak-milestone': 300,
     'game-specific': 150,
+    'cohort': 150,
+    'social': 75,
+    'level': 200,
+    'variety': 250,
   };
 
   return achievementRewards[achievementType] || 100;
@@ -156,3 +162,23 @@ export function calculateTotalGameXP(
 export const getQuestProgressPercentage = (quest: DailyQuest): number => {
   return (quest.progress / quest.maxProgress) * 100;
 };
+
+/**
+ * Calculate XP for solving a problem in a cohort room
+ * Base XP + bonus for streak
+ */
+export function calculateCohortSolveXP(streakDays: number = 0): number {
+  const baseXP = 100; // Base XP for solving a problem
+  const multiplier = getStreakMultiplier(streakDays);
+  return Math.floor(baseXP * multiplier);
+}
+
+/**
+ * Calculate XP for winning a battle in a cohort room
+ * Base XP + bonus for streak
+ */
+export function calculateBattleWinXP(streakDays: number = 0): number {
+  const baseXP = 150; // Base XP for winning a battle
+  const multiplier = getStreakMultiplier(streakDays);
+  return Math.floor(baseXP * multiplier);
+}
