@@ -122,7 +122,7 @@ export const PacManMathGame = () => {
     penaltyMode: boolean;
     penaltyTimer: number;
   } | null>(null);
-  
+
   const animationIdRef = useRef<number | null>(null);
 
   const { completeGame } = useGameCompletion({ gameType: 'pacman-math', gameName: 'Pac-Man: Math Blitz' });
@@ -223,7 +223,7 @@ export const PacManMathGame = () => {
       }
     };
   }, []);
-
+    
   useEffect(() => {
     if (!gameStarted || gameOver || !gameStateRef.current) return;
 
@@ -269,16 +269,16 @@ export const PacManMathGame = () => {
       }
       if (x < 0 || x >= MAZE_WIDTH || y < 0 || y >= MAZE_HEIGHT) return false;
       return MAZE_LAYOUT[y][x] === '0';
-    };
+  };
 
     const getNextTile = (x: number, y: number, dir: Direction): { x: number; y: number } | null => {
       let nx = x, ny = y;
-      switch (dir) {
+    switch (dir) {
         case 'up': ny--; break;
         case 'down': ny++; break;
         case 'left': nx--; break;
         case 'right': nx++; break;
-      }
+    }
       // Handle tunnel wrapping - instant teleport
       if (nx < 0) nx = MAZE_WIDTH - 1;
       if (nx >= MAZE_WIDTH) nx = 0;
@@ -292,7 +292,7 @@ export const PacManMathGame = () => {
 
     const distance = (x1: number, y1: number, x2: number, y2: number): number => {
       return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-    };
+  };
 
     // Get available directions from a tile (excluding reverse)
     const getAvailableDirections = (x: number, y: number, currentDir: Direction): Direction[] => {
@@ -329,47 +329,47 @@ export const PacManMathGame = () => {
         };
       }
 
-      switch (ghost.name) {
+    switch (ghost.name) {
         case 'blinky':
           return { x: player.x, y: player.y };
-        
+      
         case 'pinky': {
           let px = player.x, py = player.y;
-          switch (player.direction) {
+        switch (player.direction) {
             case 'up': py -= 4; px -= 4; break;
             case 'down': py += 4; break;
             case 'left': px -= 4; break;
             case 'right': px += 4; break;
-          }
+        }
           return { x: Math.max(0, Math.min(MAZE_WIDTH - 1, px)), y: Math.max(0, Math.min(MAZE_HEIGHT - 1, py)) };
         }
-        
+      
         case 'inky': {
           let ix = player.x, iy = player.y;
-          switch (player.direction) {
+        switch (player.direction) {
             case 'up': iy -= 2; break;
             case 'down': iy += 2; break;
             case 'left': ix -= 2; break;
             case 'right': ix += 2; break;
-          }
+        }
           return {
             x: Math.max(0, Math.min(MAZE_WIDTH - 1, ix + (ix - blinky.x))),
             y: Math.max(0, Math.min(MAZE_HEIGHT - 1, iy + (iy - blinky.y)))
           };
         }
-        
+      
         case 'clyde': {
           const dist = distance(ghost.x, ghost.y, player.x, player.y);
-          if (dist > 8) {
+        if (dist > 8) {
             return { x: player.x, y: player.y };
           }
           return ghost.scatterTarget;
         }
-        
-        default:
+      
+      default:
           return { x: player.x, y: player.y };
-      }
-    };
+    }
+  };
 
     const chooseGhostDirection = (ghost: Ghost, target: { x: number; y: number }): Direction => {
       const available = getAvailableDirections(ghost.x, ghost.y, ghost.direction);
@@ -388,7 +388,7 @@ export const PacManMathGame = () => {
       
       for (const dir of available) {
         const next = getNextTile(ghost.x, ghost.y, dir);
-        if (next) {
+      if (next) {
           const dist = distance(next.x, next.y, target.x, target.y);
           if (dist < bestDist) {
             bestDist = dist;
@@ -422,7 +422,7 @@ export const PacManMathGame = () => {
       
       ctx.save();
       ctx.translate(centerX, centerY);
-      
+
       let bodyColor = color;
       if (vulnerable) {
         bodyColor = flashing ? '#ffffff' : '#0000ff';
@@ -436,7 +436,7 @@ export const PacManMathGame = () => {
       ctx.beginPath();
       ctx.arc(0, -radius * 0.15, radius * 0.85, Math.PI, 0, false);
       ctx.lineTo(radius * 0.85, radius * 0.45);
-      
+
       const waves = 3;
       const waveWidth = (radius * 1.7) / (waves * 2);
       for (let i = 0; i <= waves * 2; i++) {
@@ -523,10 +523,10 @@ export const PacManMathGame = () => {
         if (player.nextDirection) {
           const nextTile = getNextTile(player.x, player.y, player.nextDirection);
           if (nextTile) {
-            player.direction = player.nextDirection;
+          player.direction = player.nextDirection;
             player.x = nextTile.x;
             player.y = nextTile.y;
-            player.nextDirection = null;
+          player.nextDirection = null;
             player.moveTimer = PLAYER_MOVE_DELAY;
           } else {
             // Try current direction
@@ -537,7 +537,7 @@ export const PacManMathGame = () => {
               player.moveTimer = PLAYER_MOVE_DELAY;
             }
           }
-        } else {
+      } else {
           // Move in current direction
           const currTile = getNextTile(player.x, player.y, player.direction);
           if (currTile) {
@@ -545,13 +545,13 @@ export const PacManMathGame = () => {
             player.y = currTile.y;
             player.moveTimer = PLAYER_MOVE_DELAY;
           }
+          }
         }
-      }
 
       if (player.invincible) {
         player.invincibleTimer -= dt;
         if (player.invincibleTimer <= 0) player.invincible = false;
-      }
+        }
 
       player.mouthAngle += 0.15;
 
@@ -635,7 +635,7 @@ export const PacManMathGame = () => {
           ghost.direction = chooseGhostDirection(ghost, target);
           
           const next = getNextTile(ghost.x, ghost.y, ghost.direction);
-          if (next) {
+        if (next) {
             ghost.x = next.x;
             ghost.y = next.y;
           }
@@ -661,7 +661,7 @@ export const PacManMathGame = () => {
             player.x = 14;
             player.y = 17;
             player.direction = 'left';
-            player.invincible = true;
+              player.invincible = true;
             player.invincibleTimer = 2 * 60;
           }
         }
@@ -676,10 +676,10 @@ export const PacManMathGame = () => {
         return;
       }
       setTimeRemaining(Math.ceil(gameState.timeRemaining));
-
+      
       // ============ DRAW ============
       ctx.fillStyle = '#000000';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Draw maze walls
       ctx.fillStyle = '#2121de';
@@ -800,7 +800,7 @@ export const PacManMathGame = () => {
               </ul>
             </div>
 
-            <button 
+                <button 
               onClick={startGame}
               className="px-6 py-3 bg-yellow-400 text-black font-['Press_Start_2P'] text-xs rounded hover:bg-yellow-300 hover:scale-105 transition-all"
             >
@@ -832,13 +832,13 @@ export const PacManMathGame = () => {
             
             <div className="flex gap-4">
               <button onClick={startGame} className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white text-xs">
-                RETRY
-              </button>
+                  RETRY
+                </button>
               <button onClick={() => completeGame(score)} className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white text-xs">
-                CONTINUE
-              </button>
+                  CONTINUE
+                </button>
+              </div>
             </div>
-          </div>
         </div>
       </div>
     );
@@ -867,7 +867,7 @@ export const PacManMathGame = () => {
           <div className="font-['Press_Start_2P'] text-white">
             <div className="text-neon-cyan text-[8px]">SCORE</div>
             <div className="text-sm">{score.toLocaleString()}</div>
-          </div>
+            </div>
           
           <div className="font-['Press_Start_2P'] text-center flex-1 mx-4">
             <div className="text-gray-400 text-[7px]">{isSupercharged ? 'POWER MODE!' : 'SOLVE:'}</div>

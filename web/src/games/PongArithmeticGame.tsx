@@ -57,7 +57,7 @@ export const PongArithmeticGame = () => {
     flashColor: 'red' | 'green' | null;
     currentProblem: MathProblem | null;
   } | null>(null);
-  
+
   const animationIdRef = useRef<number | null>(null);
 
   const { completeGame } = useGameCompletion({ gameType: 'pong-arithmetic', gameName: 'Pong Arithmetic' });
@@ -229,7 +229,7 @@ export const PongArithmeticGame = () => {
       for (let i = gameState.balls.length - 1; i >= 0; i--) {
         const ball = gameState.balls[i];
         if (!ball) continue;
-
+        
         if (ball.dissolving) {
           ball.alpha -= 0.05 * dt;
           if (ball.alpha <= 0) {

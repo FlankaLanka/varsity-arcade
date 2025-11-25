@@ -25,16 +25,16 @@ const VOCAB_DECK = [
 
 const createInitialGameState = () => ({
   player: { x: 400, y: 225, vx: 0, vy: 0, angle: 0, radius: 15, type: 'player' } as GameObject,
-  bullets: [] as GameObject[],
-  asteroids: [] as GameObject[],
-  particles: [] as GameObject[],
-  keys: { w: false, a: false, s: false, d: false },
-  mouseDown: false,
-  lastMouseX: null as number | null,
-  lastMouseY: null as number | null,
-  lastShot: 0,
-  score: 0,
-  lives: 3,
+    bullets: [] as GameObject[],
+    asteroids: [] as GameObject[],
+    particles: [] as GameObject[],
+    keys: { w: false, a: false, s: false, d: false },
+    mouseDown: false,
+    lastMouseX: null as number | null,
+    lastMouseY: null as number | null,
+    lastShot: 0,
+    score: 0,
+    lives: 3,
   timeRemaining: 60,
   active: false
 });

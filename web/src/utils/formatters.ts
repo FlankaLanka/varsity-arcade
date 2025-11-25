@@ -12,9 +12,35 @@ export const formatActivityText = (friend: Friend): string => {
   }
 };
 
-export const formatLastSeen = (date: Date): string => {
+export const formatLastSeen = (date: Date | any): string => {
+  // Convert Firestore Timestamp to Date if needed
+  let dateObj: Date;
+  
+  if (date instanceof Date) {
+    dateObj = date;
+  } else if (date?.toMillis && typeof date.toMillis === 'function') {
+    // Firestore Timestamp with toMillis method
+    dateObj = new Date(date.toMillis());
+  } else if (date?.toDate && typeof date.toDate === 'function') {
+    // Firestore Timestamp with toDate method
+    dateObj = date.toDate();
+  } else if (date?.seconds && typeof date.seconds === 'number') {
+    // Firestore Timestamp with seconds property
+    dateObj = new Date(date.seconds * 1000);
+  } else {
+    // Try to convert to Date
+    try {
+      dateObj = new Date(date);
+      if (isNaN(dateObj.getTime())) {
+        return 'Unknown';
+      }
+    } catch {
+      return 'Unknown';
+    }
+  }
+  
   const now = new Date();
-  const diff = now.getTime() - date.getTime();
+  const diff = now.getTime() - dateObj.getTime();
   
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);

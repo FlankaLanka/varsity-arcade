@@ -28,6 +28,35 @@ export default function AchievementBadge({
   const bgColor = achievement.isUnlocked ? 'bg-neon-yellow/10' : 'bg-gray-900';
   const iconOpacity = achievement.isUnlocked ? 'opacity-100' : 'opacity-30 grayscale';
 
+  // Convert Firestore Timestamp to Date if needed
+  const getUnlockedDate = (): Date | null => {
+    if (!achievement.unlockedAt) return null;
+    
+    if (achievement.unlockedAt instanceof Date) {
+      return achievement.unlockedAt;
+    }
+    
+    // Handle Firestore Timestamp with toMillis method
+    if (achievement.unlockedAt.toMillis && typeof achievement.unlockedAt.toMillis === 'function') {
+      return new Date(achievement.unlockedAt.toMillis());
+    }
+    
+    // Handle Firestore Timestamp with seconds property
+    if (achievement.unlockedAt.seconds && typeof achievement.unlockedAt.seconds === 'number') {
+      return new Date(achievement.unlockedAt.seconds * 1000);
+    }
+    
+    // Try to convert to Date
+    try {
+      const date = new Date(achievement.unlockedAt as any);
+      return isNaN(date.getTime()) ? null : date;
+    } catch {
+      return null;
+    }
+  };
+
+  const unlockedDate = getUnlockedDate();
+
   return (
     <div className="group relative">
       {/* Badge */}
@@ -65,9 +94,9 @@ export default function AchievementBadge({
             <div className="text-xs text-neon-yellow mt-1">
               +{achievement.xpReward} XP
             </div>
-            {achievement.isUnlocked && achievement.unlockedAt && (
+            {achievement.isUnlocked && unlockedDate && (
               <div className="text-xs text-gray-500 mt-1">
-                Unlocked {achievement.unlockedAt.toLocaleDateString()}
+                Unlocked {unlockedDate.toLocaleDateString()}
               </div>
             )}
             {!achievement.isUnlocked && (

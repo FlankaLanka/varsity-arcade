@@ -1,5 +1,30 @@
 # Progress Log
 
+## 2025-01-27 (Session 6)
+- **Leaderboard Page - Real Data**:
+  - Replaced synthetic data with real Firestore queries
+  - Created `getLeaderboard()` function to fetch users sorted by game high scores
+  - Added loading and empty states
+  - Shows real user rankings with avatars and current user highlighting
+  - Updated stats cards with real user rank, best score, and percentile
+
+- **Profile Page Improvements**:
+  - Fixed Firestore Timestamp handling in `ProfileDropdown` and `AchievementBadge` (handles Date, toMillis, toDate, seconds)
+  - Fixed React hooks order violation (moved hooks before conditional returns)
+  - Added `overflow-visible` to achievement containers to allow tooltips to escape
+  - Implemented collapsible activity timeline (3 items default, expandable with "Show More" button)
+
+- **Pac-Man Game Enhancements**:
+  - Fixed ghost AI: proper tile-based movement, no getting stuck, instant tunnel teleportation
+  - Fixed UI layout: extended game window with separate UI bars (top: score/problem/lives, bottom: timer)
+  - Added penalty mode: wrong power pellet → ghosts turn red and move 1.5x faster for 3 seconds
+  - Reduced movement speed by 0.5x (50% slower) for both player and ghosts
+
+- **Firestore Data Handling**:
+  - Fixed `addFriend()`: filters out undefined avatar values using conditional spread
+  - Fixed `addActivityEntry()`: only includes optional fields (icon, meta) if they exist
+  - Fixed `formatLastSeen()`: handles Firestore Timestamps with multiple conversion methods
+
 ## 2025-01-27 (Session 5)
 - **Authentication Fix**:
   - Fixed login bug where password parameter wasn't being passed from `AuthPage` to `AuthContext.login()`.
@@ -85,7 +110,7 @@
 - ✅ Built `Layout` component with header, navigation, and online player count
 - ✅ Created `GameFrame` component for reusable game HUD (score, lives, wave, timer)
 - ✅ Implemented `ArcadeHub` page with game selection cards
-- ✅ Built `LeaderboardPage` with synthetic data, filtering, and stats cards
+- ✅ Built `LeaderboardPage` with real Firestore data, filtering, loading states, and user stats
 - ✅ Created `ResultsPage` for game completion and viral loops
 
 ### Authentication System
@@ -249,14 +274,12 @@
   - **Multiplayer Ready**: Logic decoupled from physics engine for easier Firebase sync.
 
 ## Pending Work
-- Connect to Firebase backend (Auth, Firestore, Realtime DB, Functions, Storage)
-- Implement real leaderboards with user data
+- Implement time-based leaderboard filtering (daily/weekly periods)
 - Add sound effects and background music
 - Additional mini-games as specified in PRD
 - Wire profile settings to actual persistence
 - Implement friend request/accept system
 - Add real-time presence detection for friends
-- Implement real-time synchronization for whiteboard/battle (multiplayer)
 - Testing and bug fixes as needed
 
 ## Completed Games

@@ -243,10 +243,10 @@ export const addFriend = async (userId: string, friendId: string): Promise<boole
     return false; // Already friends
   }
 
-  const friendSummary = {
+  const friendSummary: Friend = {
     id: friendProfile.id,
     username: friendProfile.username,
-    avatar: friendProfile.avatar,
+    ...(friendProfile.avatar && { avatar: friendProfile.avatar }), // Only include avatar if it exists
     isOnline: false,
     currentActivity: 'offline',
     lastSeen: new Date()
@@ -290,9 +290,14 @@ export const addActivityEntry = async (
 ): Promise<void> => {
   const userRef = doc(db, 'users', userId);
   
+  // Filter out undefined values to avoid Firestore errors
   const activityEntry: ActivityEntry = {
-    ...entry,
     id: `activity-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    type: entry.type,
+    description: entry.description,
+    date: entry.date,
+    ...(entry.icon && { icon: entry.icon }),
+    ...(entry.meta && { meta: entry.meta }),
   };
   
   await updateDoc(userRef, {
@@ -410,4 +415,37 @@ export const getUserCohortStats = async (userId: string): Promise<{ solves: numb
   const battleWins = userData.activityHistory?.filter(a => a.type === 'cohort-battle').length || 0;
   
   return { solves, battleWins };
+};
+
+/**
+ * Get leaderboard data for a specific game type
+ */
+export const getLeaderboard = async (
+  gameType: GameType,
+  limit: number = 50
+): Promise<Array<{ userId: string; username: string; score: number; avatar?: string }>> => {
+  const usersRef = collection(db, 'users');
+  const usersSnapshot = await getDocs(usersRef);
+  
+  const leaderboard: Array<{ userId: string; username: string; score: number; avatar?: string }> = [];
+  
+  usersSnapshot.forEach((doc) => {
+    const userData = doc.data() as UserProfile;
+    const gameStats = userData.gameStats?.[gameType];
+    
+    if (gameStats && gameStats.highScore > 0) {
+      leaderboard.push({
+        userId: doc.id,
+        username: userData.username,
+        score: gameStats.highScore,
+        avatar: userData.avatar,
+      });
+    }
+  });
+  
+  // Sort by score descending
+  leaderboard.sort((a, b) => b.score - a.score);
+  
+  // Return top N entries
+  return leaderboard.slice(0, limit);
 };

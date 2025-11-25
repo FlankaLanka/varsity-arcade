@@ -24,7 +24,7 @@
 ### Page Components
 - **`AuthPage.tsx`**: Login and Sign-up page with toggleable forms
 - **`ArcadeHub.tsx`**: Game selection hub with game cards
-- **`LeaderboardPage.tsx`**: Leaderboard with filtering and stats (all four games: Asteroids, Pac-Man, pH Invaders, Pong Arithmetic; "All Games" option removed)
+- **`LeaderboardPage.tsx`**: Leaderboard with real Firestore data, filtering by game type, loading states, and user stats
 - **`ResultsPage.tsx`**: Game completion screen with viral loops
 - **`ProfilePage.tsx`**: Full user profile page with XP, achievements, quests, stats, activity, and settings
 - **`FriendProfilePage.tsx`**: Friend profile page (similar to user profile, without settings/quests)
@@ -120,10 +120,14 @@ const loop = (currentTime: number) => {
 - **Collision Detection**: Host performs all collision checks (projectile-enemy, enemy-player) using line-segment intersection for enemies and circle collision for projectiles/players.
 
 ## Integration Points
-- **Auth Context**: `AuthContext.tsx` manages global user state (user, login, signup, logout).
-- **Firebase Auth**: User authentication (pending implementation)
-- **Firestore**: Leaderboard data, user progress, achievements, daily quests, friend relationships (pending implementation)
-- **Realtime DB**: Online player count, friend presence/activity (pending implementation)
+- **Auth Context**: `AuthContext.tsx` manages global user state (user, login, signup, logout, refreshUser).
+- **Firebase Auth**: User authentication implemented with email/password
+- **Firestore**: 
+  - User profiles, achievements, daily quests, game stats, activity history (implemented)
+  - Leaderboard queries via `getLeaderboard()` function (implemented)
+  - Friend relationships (add/remove friends implemented)
+  - User search for adding friends (implemented)
+- **Realtime DB**: Cohort rooms, whiteboard drawings, battle state, voice signaling (implemented)
 - **Storage**: Game assets, user avatars (pending implementation)
 
 ## Profile & Social Patterns
@@ -144,7 +148,9 @@ const loop = (currentTime: number) => {
 - Friends list maintains local state for friend removal/blocking
 - Friend cards trigger modal on click (doesn't close dropdown)
 - Friend profile pages accessible via `/friend/:friendId` route
-- Mock friend data with online status and activity tracking
+- Real friend data from Firestore with online status and activity tracking
+- Add friend modal with user search functionality
+- Firestore services: `addFriend()`, `removeFriend()`, `searchUsersByUsername()`
 
 ## Key Flows
 
@@ -168,7 +174,7 @@ const loop = (currentTime: number) => {
 2. 4 power pellets spawn in corners with answer choices
 3. Player collects pellet:
    - **Correct**: Cancels penalty, activates power-up (ghosts vulnerable)
-   - **Incorrect**: Activates penalty (ghosts red, 1.25x speed for 3 seconds)
+   - **Incorrect**: Activates penalty (ghosts turn red, move 1.5x faster for 3 seconds)
 4. Power-up expires after 8 seconds, new problem generates
 5. Cycle repeats until timer ends
 
@@ -209,5 +215,5 @@ const loop = (currentTime: number) => {
 ## Action Items
 - Document additional games as they're implemented
 - Add sequence diagrams for complex flows (ghost AI, collision detection)
-- Document Firebase integration patterns once implemented
-- Document profile/social data models for Firebase migration
+- Document time-based leaderboard filtering implementation
+- Document profile/social data models (already implemented in Firestore)

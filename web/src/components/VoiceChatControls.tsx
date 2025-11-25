@@ -11,7 +11,7 @@ interface VoiceChatControlsProps {
   onToggleDeafen: () => void;
   onMicVolumeChange: (volume: number) => void;
   onOutputVolumeChange: (volume: number) => void;
-}
+    }
 
 export default function VoiceChatControls({
   isMuted,

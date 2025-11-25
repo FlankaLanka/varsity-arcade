@@ -49,7 +49,7 @@ function App() {
   return (
     <AuthProvider>
       <AchievementProvider>
-        <AuthenticatedApp />
+      <AuthenticatedApp />
       </AchievementProvider>
     </AuthProvider>
   );

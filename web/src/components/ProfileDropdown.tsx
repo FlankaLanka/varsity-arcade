@@ -12,17 +12,40 @@ interface ProfileDropdownProps {
 }
 
 export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProps) {
-  if (!isOpen) return null;
-
+  // Hooks must be called before any conditional returns
   const navigate = useNavigate();
   const { user: userProfile, logout } = useAuth();
   
+  if (!isOpen) return null;
   if (!userProfile) return null;
 
   // Logic to get recent data from profile
+  const getTimestamp = (date: Date | any): number => {
+    if (!date) return 0;
+    // Handle Date objects
+    if (date instanceof Date) {
+      return date.getTime();
+    }
+    // Handle Firestore Timestamp objects
+    if (date.toMillis && typeof date.toMillis === 'function') {
+      return date.toMillis();
+    }
+    // Handle Firestore Timestamp with seconds property
+    if (date.seconds && typeof date.seconds === 'number') {
+      return date.seconds * 1000;
+    }
+    // Fallback: try to convert to Date
+    try {
+      const d = new Date(date);
+      return isNaN(d.getTime()) ? 0 : d.getTime();
+    } catch {
+      return 0;
+    }
+  };
+
   const recentAchievements = userProfile.achievements
     .filter(a => a.isUnlocked)
-    .sort((a, b) => (b.unlockedAt?.getTime() || 0) - (a.unlockedAt?.getTime() || 0))
+    .sort((a, b) => getTimestamp(b.unlockedAt) - getTimestamp(a.unlockedAt))
     .slice(0, 4);
     
   const activeDailyQuests = userProfile.dailyQuests.filter(q => !q.completed);
@@ -113,7 +136,7 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
         </div>
 
         {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto overflow-x-visible">
+        <div className="flex-1 overflow-y-auto" style={{ overflowX: 'visible' }}>
           {/* Stats Grid */}
           <div className="grid grid-cols-2 gap-3 p-4 bg-gray-800/30 border-b-2 border-gray-800">
           {/* Streak */}

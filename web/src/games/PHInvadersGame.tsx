@@ -460,20 +460,20 @@ export const PHInvadersGame = () => {
         overlay={
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80">
             <h2 className="text-3xl text-neon-pink font-['Press_Start_2P'] mb-4 animate-pulse">
-              {victory ? 'VICTORY!' : 'GAME OVER'}
-            </h2>
+                {victory ? 'VICTORY!' : 'GAME OVER'}
+              </h2>
             <div className="text-xl text-white font-['Press_Start_2P'] mb-2">SCORE: {score}</div>
             <div className="text-sm text-neon-cyan font-['Press_Start_2P'] mb-6">pH: {pH.toFixed(1)}</div>
-            
-            <div className="flex gap-4">
+              
+              <div className="flex gap-4">
               <button onClick={startGame} className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white text-xs">
-                RETRY
-              </button>
+                  RETRY
+                </button>
               <button onClick={() => completeGame(score)} className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white text-xs">
-                CONTINUE
-              </button>
+                  CONTINUE
+                </button>
+              </div>
             </div>
-          </div>
         }
       >
         <canvas ref={canvasRef} className="w-full h-full" />
@@ -483,7 +483,7 @@ export const PHInvadersGame = () => {
 
   return (
     <GameFrame title="pH INVADERS" score={score} lives={lives} timeRemaining={timeRemaining} aspectRatio={16/9}>
-      <canvas ref={canvasRef} className="w-full h-full bg-transparent" />
+          <canvas ref={canvasRef} className="w-full h-full bg-transparent" />
     </GameFrame>
   );
 };

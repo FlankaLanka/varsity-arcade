@@ -1,6 +1,6 @@
 # Active Context
 
-_Last updated: 2025-01-27 (Session 5)_
+_Last updated: 2025-01-27 (Session 6)_
 
 ## Current Focus
 - **Firebase-Only Architecture**: All multiplayer state (whiteboard drawings, cursors, battle gameplay) uses Firebase Realtime Database. Battle uses a host-based model where one client runs the authoritative simulation.
@@ -17,6 +17,31 @@ _Last updated: 2025-01-27 (Session 5)_
 - **User Profile & Social System** - Complete profile page, XP progression, achievements, friends list with modals.
 
 ## Recently Completed
+- **Leaderboard Page - Real Data Integration**:
+  - Replaced synthetic leaderboard data with real Firestore queries
+  - Added `getLeaderboard()` function in `firestore.ts` to fetch users sorted by game high scores
+  - Implemented loading states and empty states
+  - Shows real user rankings, avatars, and current user highlighting
+  - Updated stats section with real user rank, best score, and percentile calculations
+
+- **Profile Page Improvements**:
+  - Fixed Firestore Timestamp handling in `ProfileDropdown` and `AchievementBadge` components
+  - Fixed React hooks order violation (hooks now called before conditional returns)
+  - Made achievement tooltips overflow properly by adding `overflow-visible` to containers
+  - Added collapsible activity timeline (shows 3 items by default, expandable to show all)
+
+- **Pac-Man Game Fixes**:
+  - Fixed ghost AI to use proper tile-based movement (no more getting stuck)
+  - Fixed tunnel teleportation (instant wrap-around, no lerping)
+  - Fixed UI overlapping issues (extended game window with separate UI bars above and below)
+  - Added penalty mode: collecting wrong power pellet makes ghosts red and move 1.5x faster for 3 seconds
+  - Reduced movement speed by 0.5x (50% slower) for both player and ghosts
+
+- **Firestore Data Handling Fixes**:
+  - Fixed `addFriend()` to filter out `undefined` avatar values (Firestore doesn't accept undefined)
+  - Fixed `addActivityEntry()` to only include optional fields if they exist
+  - Fixed `formatLastSeen()` to handle Firestore Timestamps (Date, toMillis, toDate, seconds properties)
+
 - **Authentication Fix**:
   - Fixed login issue where password wasn't being passed to `login` function in `AuthContext`.
   - Updated `AuthPage.tsx` to pass both `email` and `password` to login function.
@@ -134,12 +159,12 @@ _Last updated: 2025-01-27 (Session 5)_
   - Game state resets properly on mount/unmount
 
 ## Next Steps
-1. Connect to Firebase backend for real leaderboards and user data
-3. Implement additional mini-games as specified in PRD
-4. Add sound effects and music
-5. Wire profile settings to actual persistence
-6. Implement friend request/accept system
-7. Add real-time presence detection for friends
+1. Implement time-based filtering for leaderboards (daily/weekly periods)
+2. Add sound effects and music
+3. Wire profile settings to actual persistence
+4. Implement friend request/accept system
+5. Add real-time presence detection for friends
+6. Implement additional mini-games as specified in PRD
 
 ## Decisions & Conventions
 - **Visual Style**: Pixelated outer space theme (retro fonts, deep cosmos backgrounds) for the entire UI.

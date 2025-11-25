@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ReactElement } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import XPProgressBar from '../components/XPProgressBar';
 import AchievementBadge from '../components/AchievementBadge';
 import FriendCard from '../components/FriendCard';
@@ -98,7 +99,7 @@ export function ProfilePage() {
     
     try {
       await removeFriend(firebaseUser.uid, friendId);
-      setFriends(prev => prev.filter(friend => friend.id !== friendId));
+    setFriends(prev => prev.filter(friend => friend.id !== friendId));
       // Refresh user data
       if (refreshUser) {
         await refreshUser();
@@ -114,8 +115,8 @@ export function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen text-white bg-gradient-to-b from-space-900 via-space-800 to-space-900">
-      <div className="max-w-6xl mx-auto px-4 py-10 space-y-10">
+    <div className="min-h-screen text-white bg-gradient-to-b from-space-900 via-space-800 to-space-900 overflow-visible">
+      <div className="max-w-6xl mx-auto px-4 py-10 space-y-10 overflow-visible">
         <HeaderSection userProfile={userProfile} defaultAvatar={defaultAvatar} />
 
         <StatsGrid userProfile={userProfile} />
@@ -220,7 +221,7 @@ function AchievementSection({
   onTabChange: (tab: (typeof achievementTabs)[number]) => void;
 }) {
   return (
-    <section className="p-6 border-2 border-neon-yellow/40 bg-gray-900/60 rounded-xl shadow-lg space-y-4">
+    <section className="p-6 border-2 border-neon-yellow/40 bg-gray-900/60 rounded-xl shadow-lg space-y-4 overflow-visible">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-['Press_Start_2P'] text-neon-yellow flex items-center gap-2">
           <span role="img" aria-label="trophy">
@@ -246,7 +247,7 @@ function AchievementSection({
       {achievements.length === 0 ? (
         <p className="text-sm text-gray-500 italic">No achievements in this category yet. Keep playing!</p>
       ) : (
-        <div className="flex flex-wrap gap-4">
+        <div className="flex flex-wrap gap-4 overflow-visible">
           {achievements.map(achievement => (
             <AchievementBadge key={achievement.id} achievement={achievement} size="medium" />
           ))}
@@ -398,6 +399,9 @@ function FriendsSection({ friends, onFriendClick }: { friends: Friend[]; onFrien
 }
 
 function ActivitySection({ activities }: { activities: ActivityEntry[] }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const MAX_COLLAPSED_ITEMS = 3;
+
   const groupedEntries = activities.reduce<Map<string, ActivityEntry[]>>((map, activity) => {
     // Handle Firestore timestamps
     const dateObj = activity.date instanceof Date ? activity.date : (activity.date as any).toDate();
@@ -409,18 +413,56 @@ function ActivitySection({ activities }: { activities: ActivityEntry[] }) {
     return map;
   }, new Map<string, ActivityEntry[]>());
 
+  // Flatten all entries for counting and limiting
+  const allEntries = Array.from(groupedEntries.entries()).flatMap(([date, items]) => 
+    items.map(item => ({ date, item }))
+  );
+  const hasMoreItems = allEntries.length > MAX_COLLAPSED_ITEMS;
+  const displayedEntriesFlat = isExpanded 
+    ? allEntries
+    : allEntries.slice(0, MAX_COLLAPSED_ITEMS);
+
+  // Regroup displayed entries by date
+  const displayedEntries = displayedEntriesFlat.reduce<Map<string, ActivityEntry[]>>((map, { date, item }) => {
+    if (!map.has(date)) {
+      map.set(date, []);
+    }
+    map.get(date)?.push(item);
+    return map;
+  }, new Map<string, ActivityEntry[]>());
+
   return (
     <section className="p-6 border-2 border-indigo-500/40 bg-gray-900/60 rounded-xl shadow-lg space-y-4">
-      <h2 className="text-sm font-['Press_Start_2P'] text-indigo-300 flex items-center gap-2">
-        <span role="img" aria-label="timeline">
-          🕒
-        </span>
-        Activity Timeline
-      </h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-['Press_Start_2P'] text-indigo-300 flex items-center gap-2">
+          <span role="img" aria-label="timeline">
+            🕒
+          </span>
+          Activity Timeline
+        </h2>
+        {hasMoreItems && (
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="flex items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200 transition-colors font-['Press_Start_2P']"
+          >
+            {isExpanded ? (
+              <>
+                <ChevronUp size={14} />
+                <span>Show Less</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown size={14} />
+                <span>Show More ({allEntries.length - MAX_COLLAPSED_ITEMS})</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
       <div className="relative pl-6">
         <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-gradient-to-b from-indigo-500/40 via-indigo-400/20 to-transparent pointer-events-none" />
         <div className="space-y-6">
-          {Array.from(groupedEntries.entries()).map(([date, items]) => (
+          {Array.from(displayedEntries.entries()).map(([date, items]) => (
             <div key={date}>
               <p className="text-xs font-['Press_Start_2P'] text-indigo-200 mb-3">{date}</p>
               <div className="space-y-3">

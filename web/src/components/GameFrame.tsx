@@ -50,27 +50,27 @@ export const GameFrame = ({
             <div className="absolute top-3 left-3 z-20 font-['Press_Start_2P'] text-white">
               <div className="text-neon-cyan text-[8px] mb-0.5">SCORE</div>
               <div className="text-sm">{score.toLocaleString()}</div>
-            </div>
+        </div>
 
             <div className="absolute top-3 right-3 z-20 font-['Press_Start_2P'] text-white text-right">
               <div className="text-neon-pink text-[8px] mb-0.5">LIVES</div>
               <div className="text-sm">{lives > 0 ? '♥'.repeat(lives) : '—'}</div>
-            </div>
-            
-            {wave && (
+        </div>
+        
+        {wave && (
               <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 font-['Press_Start_2P'] text-white text-center">
                 <div className="text-neon-green text-[8px] mb-0.5">WAVE</div>
                 <div className="text-sm">{wave}</div>
-              </div>
-            )}
+          </div>
+        )}
 
-            {timeRemaining !== undefined && (
+        {timeRemaining !== undefined && (
               <div className="absolute bottom-3 right-3 z-20 font-['Press_Start_2P'] text-white text-right">
                 <div className="text-neon-yellow text-[8px] mb-0.5">TIME</div>
                 <div className={`text-sm ${timeRemaining <= 10 ? 'text-red-500 animate-pulse' : ''}`}>
-                  {timeRemaining.toString().padStart(2, '0')}
-                </div>
-              </div>
+              {timeRemaining.toString().padStart(2, '0')}
+            </div>
+          </div>
             )}
           </>
         )}

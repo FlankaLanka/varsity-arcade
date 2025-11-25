@@ -45,7 +45,7 @@ export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
     
     try {
       await removeFriend(firebaseUser.uid, friendId);
-      setFriends(prev => prev.filter(friend => friend.id !== friendId));
+    setFriends(prev => prev.filter(friend => friend.id !== friendId));
       // Refresh user data
       if (refreshUser) {
         await refreshUser();
