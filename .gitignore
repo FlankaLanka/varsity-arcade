@@ -29,3 +29,4 @@ coverage/
 # Cursor / AI artifacts
 .cursor/
 .cursordb/
+.vercel

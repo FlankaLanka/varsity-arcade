@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "clsx": "^2.1.1",
+    "firebase": "^12.6.0",
     "katex": "^0.16.25",
     "lucide-react": "^0.554.0",
     "react": "^19.2.0",

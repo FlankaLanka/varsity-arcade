@@ -165,7 +165,7 @@ export const ArcadeHub = () => {
       <div className="border-4 border-neon-pink p-6 bg-space-800/50 relative overflow-hidden">
         <div className="relative z-10">
           <h2 className="text-2xl text-white mb-2">DAILY CHALLENGE</h2>
-          <p className="text-neon-pink text-sm mb-4 font-pixel">BEAT THE COHORT HIGH SCORE: 12,500</p>
+          <p className="text-neon-pink text-sm mb-4 font-pixel">Asteroids: Synonym Shooter - Score 300 or higher.</p>
           <button 
             onClick={() => navigate('/game/asteroids')}
             className="retro-btn bg-neon-pink text-white border-neon-pink hover:bg-white hover:text-black"
