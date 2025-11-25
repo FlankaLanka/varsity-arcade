@@ -23,7 +23,7 @@ export function AuthPage() {
         if (!email || !password) {
           throw new Error('Please fill in all fields');
         }
-        await login(email);
+        await login(email, password);
       } else {
         if (!email || !password || !username) {
           throw new Error('Please fill in all fields');
