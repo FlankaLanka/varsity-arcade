@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { deleteCohort, leaveCohort, getUserProfile } from '../services/firestore';
-import type { Cohort, CohortMember, WhiteboardDrawing } from '../types/cohort';
+import type { Cohort, CohortMember, WhiteboardDrawing, CohortProblem } from '../types/cohort';
 import type { UserProfile } from '../types/user';
 import Whiteboard from '../components/Whiteboard';
 import WhiteboardBattle from '../components/WhiteboardBattle';
@@ -13,7 +13,8 @@ import { rtdb } from '../lib/firebase';
 import { ref, onValue, remove, onDisconnect, set } from 'firebase/database';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Trash2 } from 'lucide-react';
+import { Trash2, HelpCircle, Lightbulb } from 'lucide-react';
+import { getRandomProblem, getNextProblem } from '../data/problemBank';
 
 export default function CohortRoomPage() {
   const { cohortId } = useParams();
@@ -25,6 +26,19 @@ export default function CohortRoomPage() {
   const [drawings, setDrawings] = useState<WhiteboardDrawing[]>([]);
   const [memberHealths, setMemberHealths] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [loadingNewQuestion, setLoadingNewQuestion] = useState(false);
+  const whiteboardSnapshotRef = useRef<(() => Promise<string | null>) | null>(null);
+  const [, setSnapshotReady] = useState(false);
+  const [currentProblem, setCurrentProblem] = useState<CohortProblem | null>(null);
+  const [showHint, setShowHint] = useState(false);
+
+  // Wrapper to store the snapshot function in a ref and trigger re-render
+  const handleSnapshotRequest = useCallback((fn: () => Promise<string | null>) => {
+    if (typeof fn === 'function') {
+      whiteboardSnapshotRef.current = fn;
+      setSnapshotReady(true); // Trigger re-render so AIChatInterface gets the function
+    }
+  }, []);
 
   // Handle user presence and leaving on disconnect
   useEffect(() => {
@@ -152,6 +166,47 @@ export default function CohortRoomPage() {
     return () => unsubscribe();
   }, [cohortId]);
 
+  // Clear whiteboard snapshot when switching to battle mode
+  useEffect(() => {
+    if (mode === 'battle') {
+      whiteboardSnapshotRef.current = null;
+    }
+  }, [mode]);
+
+  // Listen to current problem from RTDB and initialize if needed
+  useEffect(() => {
+    if (!cohortId || !cohort) return;
+
+    // Open Canvas doesn't have problems
+    if (cohort.subjectCategory === 'Open Canvas') {
+      setCurrentProblem(null);
+      return;
+    }
+
+    const problemRef = ref(rtdb, `cohorts/${cohortId}/currentProblem`);
+    
+    const unsubscribe = onValue(problemRef, async (snapshot) => {
+      const problemData = snapshot.val();
+      
+      if (problemData) {
+        setCurrentProblem(problemData as CohortProblem);
+      } else {
+        // No problem exists, initialize one based on cohort subject
+        const newProblem = getRandomProblem(
+          cohort.subjectCategory || 'Math',
+          cohort.subjectSubcategory || 'Algebra'
+        );
+        
+        if (newProblem) {
+          await set(problemRef, newProblem);
+          setCurrentProblem(newProblem);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [cohortId, cohort?.subjectCategory, cohort?.subjectSubcategory]);
+
   if (loading || !cohort) return <div className="text-white p-10">Loading cohort...</div>;
 
   const handleVerificationSuccess = async (finalDrawings: WhiteboardDrawing[]) => {
@@ -175,10 +230,12 @@ export default function CohortRoomPage() {
   };
 
   const handleBattleEnd = async () => {
-    if (!cohortId) return;
+    if (!cohortId || !cohort) return;
+    
+    setLoadingNewQuestion(true);
     
     try {
-      // Update game state to return to whiteboard
+      // 1. Update game state to return to whiteboard
       const gameStateRef = ref(rtdb, `cohorts/${cohortId}/gameState`);
       await set(gameStateRef, {
         mode: 'whiteboard',
@@ -187,9 +244,41 @@ export default function CohortRoomPage() {
         startedAt: null
       });
       
-      // Local state will be updated by the listener above
+      // 2. Clear whiteboard drawings in RTDB (clear entire whiteboard node)
+      const whiteboardRef = ref(rtdb, `cohorts/${cohortId}/whiteboard`);
+      await remove(whiteboardRef);
+      
+      // 3. Clear AI chat in RTDB
+      const chatRef = ref(rtdb, `cohorts/${cohortId}/chat/messages`);
+      await remove(chatRef);
+      
+      // 4. Select new random problem (different from current) - skip for Open Canvas
+      if (cohort.subjectCategory !== 'Open Canvas') {
+        const newProblem = getNextProblem(
+          cohort.subjectCategory || 'Math',
+          cohort.subjectSubcategory || 'Algebra',
+          currentProblem?.id
+        );
+        
+        // 5. Update currentProblem in RTDB
+        if (newProblem) {
+          const problemRef = ref(rtdb, `cohorts/${cohortId}/currentProblem`);
+          await set(problemRef, newProblem);
+        }
+      } else {
+        // Open Canvas - clear any existing problem
+        const problemRef = ref(rtdb, `cohorts/${cohortId}/currentProblem`);
+        await remove(problemRef);
+      }
+      
+      // Small delay to ensure all Firebase updates are processed
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Local state will be updated by the listeners
+      setLoadingNewQuestion(false);
     } catch (error) {
       console.error("Failed to end battle:", error);
+      setLoadingNewQuestion(false);
     }
   };
 
@@ -226,97 +315,182 @@ export default function CohortRoomPage() {
   const isOwner = user?.id === cohort?.ownerId;
 
   return (
-    <div className="h-screen bg-space-900 text-white flex flex-col overflow-hidden pt-16">
-      {/* Header */}
-      <header className="bg-gray-900 border-b border-gray-800 px-4 py-2 flex justify-between items-center z-10">
-        <div>
-          <h1 className="text-sm font-['Press_Start_2P'] text-neon-cyan truncate max-w-md">
-            {cohort.title}
-          </h1>
-          <p className="text-xs text-gray-500 flex items-center gap-2">
-            ID: {cohort.id} • {mode === 'whiteboard' ? 'COLLABORATION MODE' : 'BATTLE MODE'} • {members.length}/{cohort.settings?.maxMembers || 5} members
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {isOwner && (
-            <button 
-              onClick={handleDeleteCohort}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-red-500/30 rounded transition-all"
-              title="Delete Cohort"
-            >
-              <Trash2 size={14} />
-              DELETE
-            </button>
-          )}
-        <button 
-            onClick={async () => {
-              if (!cohortId || !user?.id || !cohort) return;
-              
-              try {
-                // Clean up RTDB presence first (for all users including owner)
-                const presenceRef = ref(rtdb, `cohorts/${cohortId}/presence/${user.id}`);
-                await remove(presenceRef);
-                // No need to explicitly call leaveCohort as it is now a no-op
-              } catch (error) {
-                console.error("Failed to leave cohort:", error);
-              }
-              
-              navigate('/cohorts');
-            }}
-          className="text-xs text-gray-400 hover:text-white"
-        >
-          EXIT
-        </button>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Members */}
-        <div className="w-56 bg-gray-900 border-r border-gray-800 flex flex-col">
-          <div className="p-3 border-b border-gray-800">
-            <h3 className="text-xs font-['Press_Start_2P'] text-neon-purple">MEMBERS ({members.length})</h3>
+    <>
+      <div className="h-screen bg-space-900 text-white flex flex-col overflow-hidden pt-16">
+        {/* Header */}
+        <header className="bg-gray-900 border-b border-gray-800 px-4 py-2 flex justify-between items-center z-10">
+          <div>
+            <h1 className="text-sm font-['Press_Start_2P'] text-neon-cyan truncate max-w-md">
+              {cohort.title}
+            </h1>
+            <p className="text-xs text-gray-500 flex items-center gap-2">
+              ID: {cohort.id} • {mode === 'whiteboard' ? 'COLLABORATION MODE' : 'BATTLE MODE'} • {members.length}/{cohort.settings?.maxMembers || 5} members
+            </p>
           </div>
-          <CohortMemberAvatars members={members} mode={mode} memberHealths={memberHealths} />
+          <div className="flex items-center gap-3">
+            {isOwner && (
+              <button 
+                onClick={handleDeleteCohort}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-red-500/30 rounded transition-all"
+                title="Delete Cohort"
+              >
+                <Trash2 size={14} />
+                DELETE
+              </button>
+            )}
+          <button 
+              onClick={async () => {
+                if (!cohortId || !user?.id || !cohort) return;
+                
+                try {
+                  // Clean up RTDB presence first (for all users including owner)
+                  const presenceRef = ref(rtdb, `cohorts/${cohortId}/presence/${user.id}`);
+                  await remove(presenceRef);
+                  // No need to explicitly call leaveCohort as it is now a no-op
+                } catch (error) {
+                  console.error("Failed to leave cohort:", error);
+                }
+                
+                navigate('/cohorts');
+              }}
+            className="text-xs text-gray-400 hover:text-white"
+          >
+            EXIT
+          </button>
+          </div>
+        </header>
+
+        {/* Problem Banner */}
+        {loadingNewQuestion ? (
+          <div className="bg-gradient-to-r from-neon-purple/20 via-gray-900 to-neon-cyan/20 border-b border-gray-800 px-4 py-3">
+            <div className="flex items-center justify-center max-w-6xl mx-auto">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-10 h-10 bg-neon-purple/30 rounded-lg border border-neon-purple/50">
+                  <HelpCircle size={20} className="text-neon-purple animate-pulse" />
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400 uppercase tracking-wider mb-0.5">
+                    LOADING...
+                  </div>
+                  <p className="text-white font-medium text-lg animate-pulse">
+                    Preparing New Question
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : currentProblem ? (
+          <div className="bg-gradient-to-r from-neon-purple/20 via-gray-900 to-neon-cyan/20 border-b border-gray-800 px-4 py-3">
+            <div className="flex items-center justify-between max-w-6xl mx-auto">
+              <div className="flex items-center gap-3 flex-1">
+                <div className="flex items-center justify-center w-10 h-10 bg-neon-purple/30 rounded-lg border border-neon-purple/50">
+                  <HelpCircle size={20} className="text-neon-purple" />
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs text-gray-400 uppercase tracking-wider mb-0.5">
+                    {currentProblem.category} • {currentProblem.subcategory}
+                  </div>
+                  <p className="text-white font-medium text-lg">
+                    {currentProblem.question}
+                  </p>
+                </div>
+              </div>
+              {currentProblem.hint && (
+                <button
+                  onClick={() => setShowHint(!showHint)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${
+                    showHint 
+                      ? 'bg-neon-yellow/20 border-neon-yellow/50 text-neon-yellow' 
+                      : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white hover:border-gray-600'
+                  }`}
+                  title={showHint ? 'Hide Hint' : 'Show Hint'}
+                >
+                  <Lightbulb size={16} />
+                  <span className="text-xs font-bold">HINT</span>
+                </button>
+              )}
+            </div>
+            {showHint && currentProblem.hint && (
+              <div className="mt-2 max-w-6xl mx-auto pl-13">
+                <div className="bg-neon-yellow/10 border border-neon-yellow/30 rounded-lg px-4 py-2 ml-13">
+                  <p className="text-neon-yellow/80 text-sm italic">
+                    💡 {currentProblem.hint}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {/* Whiteboard Section */}
+        <div className="flex overflow-hidden relative" style={{ aspectRatio: '16/9' }}>
+          {/* Loading Overlay */}
+          {loadingNewQuestion && (
+            <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-neon-cyan font-['Press_Start_2P'] text-xl mb-4 animate-pulse">
+                  LOADING NEW QUESTION...
+                </div>
+                <div className="w-64 h-2 bg-gray-800 rounded-full overflow-hidden mx-auto">
+                  <div className="h-full bg-neon-cyan animate-pulse" style={{ width: '100%' }}></div>
+                </div>
+              </div>
+            </div>
+          )}
           
-          {/* Voice Chat Controls */}
-          <div className="p-3 border-t border-gray-800 mt-auto">
-            <VoiceChatControls />
+          {/* Left Sidebar - Members */}
+          <div className="w-56 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0">
+            <div className="p-3 border-b border-gray-800">
+              <h3 className="text-xs font-['Press_Start_2P'] text-neon-purple">MEMBERS ({members.length})</h3>
+            </div>
+            <CohortMemberAvatars members={members} mode={mode} memberHealths={memberHealths} />
+            
+            {/* Voice Chat Controls */}
+            <div className="p-3 border-t border-gray-800 mt-auto">
+              <VoiceChatControls />
+            </div>
           </div>
-        </div>
 
-        {/* Center - Whiteboard / Battle */}
-        <div className="flex-1 bg-gray-950 relative overflow-hidden flex flex-col">
-          {mode === 'whiteboard' ? (
-            <Whiteboard 
-              onVerifySuccess={handleVerificationSuccess}
-              cohortId={cohortId || ''}
-              currentUser={user ? {
-                id: user.id,
-                username: user.username,
-                color: ['#FFFFFF', '#FF0055', '#00FFFF', '#55FF00', '#FFFF00'][Math.abs(user.id.charCodeAt(0)) % 5]
-              } : undefined}
-            />
-          ) : (
-            <WhiteboardBattle 
-              drawings={drawings} 
-              onBattleEnd={handleBattleEnd} 
-              onHealthUpdate={setMemberHealths}
-              members={members}
-              currentUserId={user?.id || ''}
-              cohortId={cohortId || ''}
-            />
-          )}
-        </div>
-
-        {/* Right Sidebar - AI Chat */}
-        <div className="w-64 bg-gray-900 border-l border-gray-800 flex flex-col">
-          <div className="p-3 border-b border-gray-800">
-            <h3 className="text-xs font-['Press_Start_2P'] text-neon-green">AI TUTOR</h3>
+          {/* Center - Whiteboard / Battle */}
+          <div className={`flex-1 bg-gray-950 relative overflow-hidden flex flex-col min-w-0 ${loadingNewQuestion ? 'pointer-events-none opacity-50' : ''}`}>
+            {mode === 'whiteboard' ? (
+              <Whiteboard 
+                onVerifySuccess={handleVerificationSuccess}
+                cohortId={cohortId || ''}
+                currentUser={user ? {
+                  id: user.id,
+                  username: user.username,
+                  color: ['#FFFFFF', '#FF0055', '#00FFFF', '#55FF00', '#FFFF00'][Math.abs(user.id.charCodeAt(0)) % 5]
+                } : undefined}
+                onSnapshotRequest={handleSnapshotRequest}
+                currentProblem={currentProblem}
+              />
+            ) : (
+              <WhiteboardBattle 
+                drawings={drawings} 
+                onBattleEnd={handleBattleEnd} 
+                onHealthUpdate={setMemberHealths}
+                members={members}
+                currentUserId={user?.id || ''}
+                cohortId={cohortId || ''}
+              />
+            )}
           </div>
-          <AIChatInterface />
         </div>
       </div>
-    </div>
+
+      {/* AI Chat Section */}
+      <div className={`bg-gray-900 border-t border-gray-800 flex flex-col overflow-hidden text-white relative ${loadingNewQuestion ? 'pointer-events-none opacity-50' : ''}`} style={{ aspectRatio: '16/9' }}>
+        <div className="p-4 border-b border-gray-800 shrink-0">
+          <h3 className="text-sm font-['Press_Start_2P'] text-neon-green">AI TUTOR</h3>
+        </div>
+          <AIChatInterface 
+            cohortId={cohortId || ''} 
+            whiteboardSnapshot={mode === 'whiteboard' ? whiteboardSnapshotRef.current : null}
+            members={members}
+            currentProblem={currentProblem}
+          />
+      </div>
+    </>
   );
 }

@@ -34,6 +34,7 @@
 - **`AsteroidsGame.tsx`**: Asteroids: Synonym Shooter implementation
 - **`PacManMathGame.tsx`**: Pac-Man: Math Blitz implementation
 - **`PHInvadersGame.tsx`**: pH Invaders: Chemistry Challenge implementation
+- **`PongMathGame.tsx`**: Pong Math: Order of operations math game with classic Pong mechanics
 - **`Whiteboard.tsx`**: Interactive drawing canvas with verify workflow
 - **`WhiteboardBattle.tsx`**: Minigame transforming drawings into enemies (Cooperative Defense)
 
@@ -64,12 +65,14 @@ const loop = (currentTime: number) => {
 ### Collision Detection
 - **Grid-based** (Pac-Man): Tile-based collision, check valid paths
 - **Geometric** (Asteroids, pH Invaders): Distance-based collision detection
+- **Rectangle-Circle** (Pong Math): Paddle-ball collision using bounding box and radius
 - **Line-Segment** (Whiteboard Battle): Precise intersection check between projectiles/player (circles) and enemy paths (line segments)
 
 ### AI Patterns
 - **Pac-Man Ghosts**: Intersection-based movement, individual targeting strategies, no-reverse rule
 - **Asteroids Enemies**: Simple chase/flee logic
 - **pH Invaders Enemies**: Formation-based movement, periodic shooting, side-to-side descent
+- **Pong Math AI**: Perfect tracking AI that always returns the ball (moves toward ball's y-position with speed limit)
 - **Whiteboard Battle Enemies**: Center-of-mass chase logic with scaling growth
 
 ## Design Principles
@@ -165,6 +168,18 @@ const loop = (currentTime: number) => {
    - Enemy kills (50-100 points)
    - pH maintenance (10-100 points/second based on proximity to pH 7)
 7. Game ends when all enemies defeated, timer expires, or lives reach 0
+
+### Educational Challenge Flow (Pong Math)
+1. Ball moves between player (left) and AI (right) paddles
+2. When ball hits AI paddle, it splits into 3 numbered balls
+3. Math problem (order of operations) appears at top of screen
+4. Player must identify correct ball and return it:
+   - **Correct return**: +1000 points, green flash, all wrong balls destroyed, correct ball bounces back as regular ball
+   - **Wrong return**: -50 points, red flash, wrong ball dissolves
+   - **Miss correct ball**: -50 points, red flash, new ball spawns
+   - **Wrong ball passes through**: No penalty, silently removed
+5. Correct ball continues as regular ball, can split again when hitting AI paddle
+6. Game ends when 60-second timer reaches 0
 
 ### Collaborative Whiteboard Flow
 1. Users join a Cohort Room

@@ -8,9 +8,19 @@ export interface Cohort {
   inviteCode?: string;
   createdAt: Date;
   description?: string;
+  subjectCategory: string;
+  subjectSubcategory: string;
   settings?: {
     maxMembers?: number;
   };
+}
+
+export interface CohortProblem {
+  id: string;
+  question: string;
+  category: string;
+  subcategory: string;
+  hint?: string;
 }
 
 export interface CohortMember {
@@ -31,6 +41,7 @@ export interface WhiteboardDrawing {
   brushSize: number;
   timestamp: number;
   type: 'path'; // extensible for shapes later
+  userId?: string; // User who created this drawing (for undo/redo)
 }
 
 // Battle Mode Types
@@ -77,4 +88,7 @@ export interface AIChatMessage {
   role: 'user' | 'ai';
   content: string;
   timestamp: Date;
+  userId?: string; // For user messages
+  username?: string; // For user messages
+  imageUrl?: string; // Optional image URL for AI messages with whiteboard preview
 }

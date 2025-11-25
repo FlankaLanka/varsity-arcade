@@ -2,8 +2,9 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Eraser, Undo, Redo, Trash2, PenTool, Check, Circle, Square, Triangle, Move } from 'lucide-react';
 import { ref, onValue, push, set, remove, serverTimestamp, onDisconnect } from 'firebase/database';
 import { rtdb } from '../lib/firebase';
-import type { WhiteboardDrawing } from '../types/cohort';
+import type { WhiteboardDrawing, CohortProblem, AIChatMessage } from '../types/cohort';
 import { throttle } from '../utils/throttle';
+import { verifySolution } from '../services/aiTutor';
 
 interface RemoteCursor {
   x: number;
@@ -21,6 +22,10 @@ interface WhiteboardProps {
     username: string;
     color?: string;
   };
+  onSnapshotRequest?: (captureSnapshot: () => Promise<string | null>) => void;
+  currentProblem?: CohortProblem | null;
+  chatMessages?: AIChatMessage[];
+  onVerificationMessage?: (message: string, solved: boolean) => void;
 }
 
 const COLORS = ['#FFFFFF', '#FF0055', '#00FFFF', '#55FF00', '#FFFF00'];
@@ -28,20 +33,24 @@ const BRUSH_SIZES = [2, 4, 8, 12];
 
 type Tool = 'pen' | 'eraser' | 'rect' | 'circle' | 'triangle';
 
-export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: WhiteboardProps) {
+export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onSnapshotRequest, currentProblem, chatMessages = [], onVerificationMessage }: WhiteboardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<{ x: number; y: number }[]>([]);
   const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
   const [drawings, setDrawings] = useState<WhiteboardDrawing[]>([]);
-  // Redo stack is local only for now
+  // Redo stack stores drawings that were undone (for redo)
   const [redoStack, setRedoStack] = useState<WhiteboardDrawing[]>([]);
+  // Track the last drawing ID created by current user (for undo)
+  const lastUserDrawingIdRef = useRef<string | null>(null);
   
   const [color, setColor] = useState(COLORS[0]);
   const [brushSize, setBrushSize] = useState(BRUSH_SIZES[1]);
   const [activeTool, setActiveTool] = useState<Tool>('pen');
   
   const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursor>>({});
   const lastCursorPosition = useRef<{ x: number; y: number } | null>(null);
   
@@ -494,20 +503,27 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
         color: activeTool === 'eraser' ? '#111827' : color,
         brushSize: brushSize,
         timestamp: Date.now(),
-        type: 'path'
+        type: 'path',
+        userId: currentUser?.id // Track who created this drawing
       };
       
       if (cohortId) {
         // Sync to RTDB
         const whiteboardListRef = ref(rtdb, `cohorts/${cohortId}/whiteboard`);
         const newDrawingRef = push(whiteboardListRef);
-        set(newDrawingRef, { ...newDrawing, id: newDrawingRef.key });
+        const drawingWithId = { ...newDrawing, id: newDrawingRef.key || newDrawing.id };
+        set(newDrawingRef, drawingWithId);
+        // Track the last drawing ID created by this user
+        if (newDrawingRef.key) {
+          lastUserDrawingIdRef.current = newDrawingRef.key;
+        }
       } else {
         // Local mode
-      setDrawings([...drawings, newDrawing]);
+        setDrawings([...drawings, newDrawing]);
+        lastUserDrawingIdRef.current = newDrawing.id;
       }
       
-      setRedoStack([]); // Clear redo stack
+      setRedoStack([]); // Clear redo stack when new drawing is created
     }
     setCurrentPath([]);
   };
@@ -534,35 +550,83 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
     };
   };
 
-  const handleUndo = () => {
-    // Only support local undo for now or last added if we track IDs
-    // With RTDB, removing the last item is complex if multiple users draw.
-    // Simplest implementation: Remove last item locally if we are in local mode.
-    // For synced mode, we'd need to track ownership of strokes.
-    
+  const handleUndo = async () => {
     if (!cohortId) {
-    if (drawings.length === 0) return;
-    const newDrawings = [...drawings];
-    const removed = newDrawings.pop();
-    if (removed) {
-      setDrawings(newDrawings);
-      setRedoStack([...redoStack, removed]);
+      // Local mode
+      if (drawings.length === 0) return;
+      const newDrawings = [...drawings];
+      const removed = newDrawings.pop();
+      if (removed) {
+        setDrawings(newDrawings);
+        setRedoStack([...redoStack, removed]);
+        lastUserDrawingIdRef.current = newDrawings.length > 0 
+          ? newDrawings[newDrawings.length - 1]?.id || null
+          : null;
       }
     } else {
-        // TODO: Implement synced undo (remove my last stroke)
-        alert("Undo in multiplayer mode not implemented yet");
+      // Multiplayer mode - remove last drawing by current user
+      if (!currentUser?.id) return;
+      
+      // Find the last drawing created by the current user
+      const myDrawings = drawings.filter(d => d.userId === currentUser.id);
+      if (myDrawings.length === 0) return;
+      
+      // Get the most recent drawing by this user
+      const lastMyDrawing = myDrawings[myDrawings.length - 1];
+      
+      // Remove from Firebase
+      const drawingRef = ref(rtdb, `cohorts/${cohortId}/whiteboard/${lastMyDrawing.id}`);
+      await remove(drawingRef);
+      
+      // Update local state
+      const newDrawings = drawings.filter(d => d.id !== lastMyDrawing.id);
+      setDrawings(newDrawings);
+      setRedoStack([...redoStack, lastMyDrawing]);
+      
+      // Update last user drawing ID
+      const remainingMyDrawings = newDrawings.filter(d => d.userId === currentUser.id);
+      lastUserDrawingIdRef.current = remainingMyDrawings.length > 0
+        ? remainingMyDrawings[remainingMyDrawings.length - 1]?.id || null
+        : null;
     }
   };
 
-  const handleRedo = () => {
-    if (!cohortId) {
+  const handleRedo = async () => {
     if (redoStack.length === 0) return;
-    const newRedoStack = [...redoStack];
-    const restored = newRedoStack.pop();
-    if (restored) {
+    
+    if (!cohortId) {
+      // Local mode
+      const newRedoStack = [...redoStack];
+      const restored = newRedoStack.pop();
+      if (restored) {
+        setDrawings([...drawings, restored]);
+        setRedoStack(newRedoStack);
+        lastUserDrawingIdRef.current = restored.id;
+      }
+    } else {
+      // Multiplayer mode - restore last undone drawing
+      if (!currentUser?.id) return;
+      
+      const newRedoStack = [...redoStack];
+      const restored = newRedoStack.pop();
+      if (!restored) return;
+      
+      // Only redo if the restored drawing belongs to current user
+      if (restored.userId !== currentUser.id) {
+        // Put it back on the stack
+        setRedoStack([...newRedoStack, restored]);
+        return;
+      }
+      
+      // Restore to Firebase
+      const whiteboardListRef = ref(rtdb, `cohorts/${cohortId}/whiteboard`);
+      const restoredDrawingRef = ref(rtdb, `cohorts/${cohortId}/whiteboard/${restored.id}`);
+      await set(restoredDrawingRef, restored);
+      
+      // Update local state
       setDrawings([...drawings, restored]);
       setRedoStack(newRedoStack);
-        }
+      lastUserDrawingIdRef.current = restored.id;
     }
   };
 
@@ -572,18 +636,200 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
             const whiteboardRef = ref(rtdb, `cohorts/${cohortId}/whiteboard`);
             remove(whiteboardRef);
         } else {
-      setDrawings([]);
-      setRedoStack([]);
+          setDrawings([]);
         }
+        setRedoStack([]);
+        lastUserDrawingIdRef.current = null;
     }
   };
 
-  const handleVerify = () => {
+  // Fetch chat messages from Firebase for verification
+  const fetchChatMessages = async (): Promise<AIChatMessage[]> => {
+    if (!cohortId) return chatMessages;
+    
+    return new Promise((resolve) => {
+      const chatRef = ref(rtdb, `cohorts/${cohortId}/chat/messages`);
+      onValue(chatRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const messages: AIChatMessage[] = Object.entries(data).map(([id, msg]: [string, any]) => ({
+            id,
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+            userId: msg.userId,
+            username: msg.username,
+          }));
+          messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+          resolve(messages);
+        } else {
+          resolve([]);
+        }
+      }, { onlyOnce: true });
+    });
+  };
+
+  const startCountdown = useCallback(() => {
+    setCountdown(3);
+    
+    const countdownInterval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev === null || prev <= 1) {
+          clearInterval(countdownInterval);
+          setIsVerifying(false);
+          setCountdown(null);
+          onVerifySuccess(drawings);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [drawings, onVerifySuccess]);
+
+  // Capture whiteboard snapshot as base64 image
+  const captureSnapshot = useCallback(async (): Promise<string | null> => {
+    if (drawings.length === 0) {
+      return null;
+    }
+
+    // Create a temporary canvas to render the whiteboard content with bounding box
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return null;
+
+    // Calculate bounding box of all drawings
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    
+    drawings.forEach(drawing => {
+      drawing.path.forEach(point => {
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x);
+        maxY = Math.max(maxY, point.y);
+      });
+    });
+
+    // Add padding
+    const padding = 50;
+    const width = maxX - minX + padding * 2;
+    const height = maxY - minY + padding * 2;
+
+    // Set canvas size (limit to reasonable size for API)
+    const maxSize = 2048;
+    const scale = Math.min(1, maxSize / Math.max(width, height));
+    tempCanvas.width = width * scale;
+    tempCanvas.height = height * scale;
+
+    // Draw white background
+    tempCtx.fillStyle = '#111827'; // gray-900
+    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+    // Draw grid
+    tempCtx.strokeStyle = '#1f2937'; // gray-800
+    tempCtx.lineWidth = 1;
+    const gridSize = 40 * scale;
+    for (let x = 0; x < tempCanvas.width; x += gridSize) {
+      tempCtx.beginPath();
+      tempCtx.moveTo(x, 0);
+      tempCtx.lineTo(x, tempCanvas.height);
+      tempCtx.stroke();
+    }
+    for (let y = 0; y < tempCanvas.height; y += gridSize) {
+      tempCtx.beginPath();
+      tempCtx.moveTo(0, y);
+      tempCtx.lineTo(tempCanvas.width, y);
+      tempCtx.stroke();
+    }
+
+    // Draw all drawings (adjusted for bounding box and scale)
+    drawings.forEach(drawing => {
+      if (drawing.path.length < 2) return;
+      
+      tempCtx.beginPath();
+      tempCtx.lineCap = 'round';
+      tempCtx.lineJoin = 'round';
+      tempCtx.lineWidth = drawing.brushSize * scale;
+      tempCtx.strokeStyle = drawing.color;
+
+      const adjustedPath = drawing.path.map(p => ({
+        x: (p.x - minX + padding) * scale,
+        y: (p.y - minY + padding) * scale
+      }));
+
+      tempCtx.moveTo(adjustedPath[0].x, adjustedPath[0].y);
+      for (let i = 1; i < adjustedPath.length; i++) {
+        tempCtx.lineTo(adjustedPath[i].x, adjustedPath[i].y);
+      }
+      tempCtx.stroke();
+    });
+
+    // Convert to base64
+    return tempCanvas.toDataURL('image/png');
+  }, [drawings]);
+
+  // Expose snapshot function to parent
+  useEffect(() => {
+    if (onSnapshotRequest) {
+      onSnapshotRequest(captureSnapshot);
+    }
+  }, [captureSnapshot, onSnapshotRequest]);
+
+  const handleVerify = async () => {
+    if (!currentProblem) {
+      // No problem set, just start battle immediately (fallback)
+      setIsVerifying(true);
+      setTimeout(() => {
+        setIsVerifying(false);
+        onVerifySuccess(drawings);
+      }, 2000);
+      return;
+    }
+
     setIsVerifying(true);
-    setTimeout(() => {
-      setIsVerifying(false);
-      onVerifySuccess(drawings);
-    }, 2000);
+    setVerificationMessage('Checking your work...');
+
+    try {
+      // Fetch current chat messages from Firebase
+      const messages = await fetchChatMessages();
+      
+      // First try to verify via chat history
+      let result = await verifySolution(currentProblem, messages, null);
+
+      // If AI needs whiteboard to verify, capture and send it
+      if (result.needsWhiteboard && drawings.length > 0) {
+        setVerificationMessage('Checking your whiteboard work...');
+        const whiteboardImage = await captureSnapshot();
+        result = await verifySolution(currentProblem, messages, whiteboardImage);
+      }
+
+      setVerificationMessage(result.message);
+      
+      // Notify parent of verification message (to display in chat)
+      if (onVerificationMessage) {
+        onVerificationMessage(result.message, result.solved);
+      }
+
+      if (result.solved) {
+        // Start countdown after showing success message
+        setTimeout(() => {
+          setVerificationMessage(null);
+          startCountdown();
+        }, 2000);
+      } else {
+        // Not solved yet, clear after showing message
+        setTimeout(() => {
+          setIsVerifying(false);
+          setVerificationMessage(null);
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('Verification error:', error);
+      setVerificationMessage('Error verifying solution. Please try again.');
+      setTimeout(() => {
+        setIsVerifying(false);
+        setVerificationMessage(null);
+      }, 2000);
+    }
   };
 
   return (
@@ -608,13 +854,56 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
       
       {/* Loading Overlay */}
       {isVerifying && (
-        <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
-          <div className="text-neon-cyan font-['Press_Start_2P'] text-xl mb-4 animate-pulse">
-            VERIFYING SOLUTION...
-          </div>
-          <div className="w-64 h-2 bg-gray-800 rounded-full overflow-hidden">
-            <div className="h-full bg-neon-cyan animate-[loading_2s_ease-in-out_infinite]" style={{ width: '100%' }}></div>
-          </div>
+        <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-50">
+          {countdown !== null ? (
+            // Countdown display
+            <div className="flex flex-col items-center">
+              <div className="text-neon-green font-['Press_Start_2P'] text-2xl mb-6 animate-pulse">
+                GET READY!
+              </div>
+              <div 
+                className="text-9xl font-['Press_Start_2P'] text-neon-cyan animate-bounce"
+                style={{ 
+                  textShadow: '0 0 20px #00FFFF, 0 0 40px #00FFFF, 0 0 60px #00FFFF',
+                  animation: 'pulse 0.5s ease-in-out'
+                }}
+              >
+                {countdown}
+              </div>
+              <div className="mt-6 text-gray-400 font-['Press_Start_2P'] text-sm">
+                BATTLE STARTING...
+              </div>
+            </div>
+          ) : verificationMessage ? (
+            // Verification message display
+            <div className="flex flex-col items-center max-w-lg px-6 text-center">
+              {verificationMessage.toLowerCase().includes('great job') ? (
+                <>
+                  <div className="text-6xl mb-4">🎉</div>
+                  <div className="text-neon-green font-['Press_Start_2P'] text-xl mb-4">
+                    SOLVED!
+                  </div>
+                </>
+              ) : (
+                <div className="text-neon-cyan font-['Press_Start_2P'] text-lg mb-4 animate-pulse">
+                  CHECKING...
+                </div>
+              )}
+              <p className="text-white text-lg leading-relaxed">
+                {verificationMessage}
+              </p>
+            </div>
+          ) : (
+            // Default loading state
+            <>
+              <div className="text-neon-cyan font-['Press_Start_2P'] text-xl mb-4 animate-pulse">
+                VERIFYING SOLUTION...
+              </div>
+              <div className="w-64 h-2 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-neon-cyan animate-[loading_2s_ease-in-out_infinite]" style={{ width: '100%' }}></div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -688,10 +977,34 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser }: W
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          <button onClick={handleUndo} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded" title="Undo">
+          <button 
+            onClick={handleUndo} 
+            disabled={cohortId 
+              ? !currentUser?.id || drawings.filter(d => d.userId === currentUser.id).length === 0
+              : drawings.length === 0
+            }
+            className={`p-2 rounded transition-colors ${
+              (cohortId 
+                ? !currentUser?.id || drawings.filter(d => d.userId === currentUser.id).length === 0
+                : drawings.length === 0
+              )
+                ? 'text-gray-600 cursor-not-allowed' 
+                : 'text-gray-400 hover:text-white hover:bg-gray-700'
+            }`}
+            title="Undo"
+          >
             <Undo size={18} />
           </button>
-          <button onClick={handleRedo} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded" title="Redo">
+          <button 
+            onClick={handleRedo} 
+            disabled={redoStack.length === 0}
+            className={`p-2 rounded transition-colors ${
+              redoStack.length === 0
+                ? 'text-gray-600 cursor-not-allowed'
+                : 'text-gray-400 hover:text-white hover:bg-gray-700'
+            }`}
+            title="Redo"
+          >
             <Redo size={18} />
           </button>
           <button onClick={handleClear} className="p-2 text-red-500 hover:text-red-400 hover:bg-gray-700 rounded" title="Clear">

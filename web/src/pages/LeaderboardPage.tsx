@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Trophy, Medal, Award, TrendingUp } from 'lucide-react';
 
 interface LeaderboardEntry {
@@ -34,14 +34,14 @@ const generateSyntheticData = (gameType: string, period: string): LeaderboardEnt
 };
 
 export const LeaderboardPage = () => {
-  const [selectedGame, setSelectedGame] = useState<string>('all');
+  const [selectedGame, setSelectedGame] = useState<string>('pong-arithmetic');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('weekly');
   
   const games = [
-    { id: 'all', name: 'ALL GAMES' },
     { id: 'asteroids', name: 'ASTEROIDS' },
-    { id: 'pacman', name: 'PAC-MAN' },
-    { id: 'math', name: 'PH INVADERS' }
+    { id: 'pacman-math', name: 'PAC-MAN' },
+    { id: 'ph-invaders', name: 'PH INVADERS' },
+    { id: 'pong-arithmetic', name: 'PONG ARITHMETIC' }
   ];
   
   const periods = [
@@ -176,7 +176,11 @@ export const LeaderboardPage = () => {
                   </td>
                   <td className="py-4 px-4 text-center">
                     <span className="text-xs font-pixel text-gray-400 uppercase">
-                      {entry.gameType === 'all' ? 'MIXED' : entry.gameType}
+                      {entry.gameType === 'asteroids' ? 'ASTEROIDS' :
+                       entry.gameType === 'pacman-math' ? 'PAC-MAN' :
+                       entry.gameType === 'ph-invaders' ? 'PH INVADERS' :
+                       entry.gameType === 'pong-arithmetic' ? 'PONG ARITHMETIC' :
+                       entry.gameType}
                     </span>
                   </td>
                 </tr>

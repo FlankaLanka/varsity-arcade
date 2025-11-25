@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { X, Lock, Unlock, UserPlus } from 'lucide-react';
+import { X, Lock, Unlock, UserPlus, BookOpen } from 'lucide-react';
 import type { CohortPrivacy } from '../types/cohort';
+import { SUBJECT_CATEGORIES, type SubjectCategory } from '../data/problemBank';
 
 interface CreateCohortModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (title: string, privacy: CohortPrivacy, maxMembers: number, description?: string) => void;
+  onCreate: (title: string, privacy: CohortPrivacy, maxMembers: number, subjectCategory: string, subjectSubcategory: string, description?: string) => void;
 }
 
 export default function CreateCohortModal({ isOpen, onClose, onCreate }: CreateCohortModalProps) {
@@ -13,38 +14,52 @@ export default function CreateCohortModal({ isOpen, onClose, onCreate }: CreateC
   const [description, setDescription] = useState('');
   const [privacy, setPrivacy] = useState<CohortPrivacy>('public');
   const [maxMembers, setMaxMembers] = useState(5);
+  const [subjectCategory, setSubjectCategory] = useState<SubjectCategory>('Math');
+  const [subjectSubcategory, setSubjectSubcategory] = useState<string>(SUBJECT_CATEGORIES.Math[0]);
 
   if (!isOpen) return null;
+
+  const handleCategoryChange = (category: SubjectCategory) => {
+    setSubjectCategory(category);
+    // Reset subcategory - empty string for Open Canvas, first option for others
+    if (category === 'Open Canvas') {
+      setSubjectSubcategory('');
+    } else {
+      setSubjectSubcategory(SUBJECT_CATEGORIES[category][0] || '');
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
     
-    onCreate(title, privacy, maxMembers, description);
+    onCreate(title, privacy, maxMembers, subjectCategory, subjectSubcategory, description);
     
     // Reset form
     setTitle('');
     setDescription('');
     setPrivacy('public');
     setMaxMembers(5);
+    setSubjectCategory('Math');
+    setSubjectSubcategory(SUBJECT_CATEGORIES.Math[0]);
   };
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div 
-        className="w-full max-w-md bg-gray-900 border-2 border-neon-purple rounded-xl shadow-[0_0_20px_rgba(184,41,235,0.3)] relative overflow-hidden"
+        className="w-full max-w-lg bg-gray-900 border-2 border-neon-purple rounded-xl shadow-[0_0_20px_rgba(184,41,235,0.3)] relative flex flex-col max-h-[85vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center">
-          <h2 className="text-xl font-['Press_Start_2P'] text-white">CREATE COHORT</h2>
+        <div className="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center shrink-0">
+          <h2 className="text-base font-['Press_Start_2P'] text-white">CREATE COHORT</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
             <X size={20} />
           </button>
         </div>
         
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        {/* Form - Scrollable */}
+        <form onSubmit={handleSubmit} className="p-5 space-y-5 overflow-y-auto flex-1">
           <div className="space-y-2">
             <label className="block text-neon-cyan font-bold text-sm tracking-wider">COHORT TITLE</label>
             <input
@@ -52,7 +67,7 @@ export default function CreateCohortModal({ isOpen, onClose, onCreate }: CreateC
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Algebra Study Session"
-              className="w-full bg-black/50 border border-gray-600 rounded p-3 text-white focus:border-neon-purple focus:outline-none focus:shadow-[0_0_10px_rgba(184,41,235,0.2)]"
+              className="w-full bg-black/50 border border-gray-600 rounded p-3 text-base text-white focus:border-neon-purple focus:outline-none focus:shadow-[0_0_10px_rgba(184,41,235,0.2)]"
               required
               autoFocus
             />
@@ -65,8 +80,57 @@ export default function CreateCohortModal({ isOpen, onClose, onCreate }: CreateC
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What will you be studying?"
               rows={3}
-              className="w-full bg-black/50 border border-gray-600 rounded p-3 text-white focus:border-neon-purple focus:outline-none focus:shadow-[0_0_10px_rgba(184,41,235,0.2)]"
+              className="w-full bg-black/50 border border-gray-600 rounded p-3 text-base text-white focus:border-neon-purple focus:outline-none focus:shadow-[0_0_10px_rgba(184,41,235,0.2)]"
             />
+          </div>
+
+          {/* Subject Selection */}
+          <div className="space-y-2">
+            <label className="block text-neon-cyan font-bold text-sm tracking-wider flex items-center gap-2">
+              <BookOpen size={16} />
+              SUBJECT
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Category</label>
+                <select
+                  value={subjectCategory}
+                  onChange={(e) => handleCategoryChange(e.target.value as SubjectCategory)}
+                  className="w-full bg-black/50 border border-gray-600 rounded p-2.5 text-base text-white focus:border-neon-purple focus:outline-none"
+                >
+                  {Object.keys(SUBJECT_CATEGORIES).map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Topic</label>
+                {subjectCategory === 'Open Canvas' ? (
+                  <div className="w-full bg-black/30 border border-gray-600 rounded p-2.5 text-base text-gray-500">
+                    No specific topic (Free drawing)
+                  </div>
+                ) : (
+                  <select
+                    value={subjectSubcategory}
+                    onChange={(e) => setSubjectSubcategory(e.target.value)}
+                    className="w-full bg-black/50 border border-gray-600 rounded p-2.5 text-base text-white focus:border-neon-purple focus:outline-none"
+                  >
+                    {SUBJECT_CATEGORIES[subjectCategory].map((subcategory) => (
+                      <option key={subcategory} value={subcategory}>
+                        {subcategory}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">
+              {subjectCategory === 'Open Canvas' 
+                ? 'Free drawing mode - no specific problems, just collaborate and draw!'
+                : 'Problems will be generated based on this subject.'}
+            </p>
           </div>
           
           <div className="space-y-2">
@@ -81,7 +145,7 @@ export default function CreateCohortModal({ isOpen, onClose, onCreate }: CreateC
                     : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
                 }`}
               >
-                <Unlock size={20} className="mb-2" />
+                <Unlock size={18} className="mb-1.5" />
                 <span className="text-[10px] font-bold">PUBLIC</span>
               </button>
               
@@ -94,7 +158,7 @@ export default function CreateCohortModal({ isOpen, onClose, onCreate }: CreateC
                     : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
                 }`}
               >
-                <UserPlus size={20} className="mb-2" />
+                <UserPlus size={18} className="mb-1.5" />
                 <span className="text-[10px] font-bold">FRIENDS</span>
               </button>
               
@@ -107,11 +171,11 @@ export default function CreateCohortModal({ isOpen, onClose, onCreate }: CreateC
                     : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
                 }`}
               >
-                <Lock size={20} className="mb-2" />
+                <Lock size={18} className="mb-1.5" />
                 <span className="text-[10px] font-bold">PRIVATE</span>
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500">
               {privacy === 'public' && "Anyone can see and join this cohort."}
               {privacy === 'friends' && "Only your friends can see and join."}
               {privacy === 'private' && "Invite code required to join."}
@@ -138,7 +202,7 @@ export default function CreateCohortModal({ isOpen, onClose, onCreate }: CreateC
           
           <button
             type="submit"
-            className="w-full bg-neon-purple hover:bg-neon-purple/80 text-white font-bold py-3 rounded transition-colors shadow-[0_0_15px_rgba(184,41,235,0.4)] mt-4 font-['Press_Start_2P'] text-xs"
+            className="w-full bg-neon-purple hover:bg-neon-purple/80 text-white font-bold py-3 rounded transition-colors shadow-[0_0_15px_rgba(184,41,235,0.4)] font-['Press_Start_2P'] text-xs"
           >
             CREATE COHORT
           </button>

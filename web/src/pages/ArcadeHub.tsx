@@ -116,6 +116,23 @@ const PHInvadersThumbnail = () => (
   </div>
 );
 
+const PongThumbnail = () => (
+  <div className="relative w-full h-full flex items-center justify-center">
+    {/* Dark background */}
+    <div className="absolute inset-0 bg-space-900 rounded"></div>
+    {/* Center dividing line */}
+    <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-space-700"></div>
+    {/* Left paddle (player) */}
+    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-2 h-12 bg-cyan-400"></div>
+    {/* Right paddle (AI) */}
+    <div className="absolute right-4 top-1/2 -translate-y-1/2 w-2 h-12 bg-pink-500"></div>
+    {/* Ball */}
+    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full"></div>
+    {/* Number on ball */}
+    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[6px] text-black font-pixel">7</div>
+  </div>
+);
+
 export const ArcadeHub = () => {
   const navigate = useNavigate();
 
@@ -196,6 +213,14 @@ export const ArcadeHub = () => {
             color="green"
             onClick={() => navigate('/game/ph-invaders')}
             thumbnail={<PHInvadersThumbnail />}
+          />
+          <GameCard 
+            title="PONG ARITHMETIC" 
+            players={15} 
+            difficulty="EASY" 
+            color="cyan"
+            onClick={() => navigate('/game/pong-arithmetic')}
+            thumbnail={<PongThumbnail />}
           />
         </div>
       </div>

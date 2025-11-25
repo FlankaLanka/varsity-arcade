@@ -1,17 +1,18 @@
 # Active Context
 
-_Last updated: 2025-11-24 (Session 2)_
+_Last updated: 2025-11-24 (Session 3)_
 
 ## Current Focus
 - **Firebase-Only Architecture**: All multiplayer state (whiteboard drawings, cursors, battle gameplay) uses Firebase Realtime Database. Battle uses a host-based model where one client runs the authoritative simulation.
 - **Whiteboard Battle Multiplayer Fixes**: Projectile sync, victory detection, and session cleanup all working correctly.
 - **User Authentication**: Implemented basic login/sign-up flow with mock persistence.
 - **User Profile**: Integrated authentication with profile system.
-- All four games/experiences are complete and playable:
+- All five games/experiences are complete and playable:
   - **Asteroids: Synonym Shooter** - Vocabulary-based space shooter
   - **Pac-Man: Math Blitz** - Math problem-solving with classic Pac-Man mechanics
   - **pH Invaders** - Chemistry education with Space Invaders gameplay
   - **Whiteboard Battle** - Collaborative drawing turned into a cooperative defense shooter
+  - **Pong Math** - Order of operations math game with classic Pong mechanics
 - **Cohort System** - Complete implementation of cohort creation, joining, room layout, and whiteboard-to-battle workflow.
 - **User Profile & Social System** - Complete profile page, XP progression, achievements, friends list with modals.
 
@@ -100,6 +101,18 @@ _Last updated: 2025-11-24 (Session 2)_
   - Friend cards with click handlers to open modals
   - Mock friend data with online status and current activity tracking
 
+- **Pong Math Game**:
+  - Classic Pong gameplay with educational twist (order of operations math problems)
+  - Player paddle on left (W/S keys only), AI paddle on right (perfect tracking)
+  - Ball splits into 3 numbered balls when hitting AI paddle
+  - Math problem display at top of screen
+  - Scoring: +1000 points for correct return, -50 points for wrong return or missing correct ball
+  - Visual feedback: Green flash for correct, red flash for wrong/missed
+  - Wrong balls dissolve when returned, correct ball bounces back and destroys all wrong balls
+  - Minimalistic pixel UI with center dividing line
+  - 60-second timer
+  - Game state resets properly on mount/unmount
+
 ## Next Steps
 1. Connect to Firebase backend for real leaderboards and user data
 3. Implement additional mini-games as specified in PRD
@@ -122,6 +135,7 @@ _Last updated: 2025-11-24 (Session 2)_
 - **XP System**: Exponential leveling curve (100 * (level - 1)^1.5), XP from scores, completions, achievements, and quests. Streak multipliers up to 2x.
 - **Cohort System**: Single-user whiteboard transforms to cooperative defense battle on verification. Uses mock data for cohorts/members until backend integration.
 - **Authentication**: AuthContext manages user state. Local storage used for mock persistence. Protected routes redirect to AuthPage.
+- **Game Reset Pattern**: All games should reset state on component mount/unmount to prevent stale state when navigating between pages. Use `resetGameState()` function and proper cleanup in `useEffect`.
 - Always read every Memory Bank file at the start of a task.
 - Update Memory Bank immediately after making meaningful code or process changes.
 - Use `.cursorrules` to store recurring patterns, preferences, or insights that improve future work.

@@ -5,6 +5,7 @@ import {
   getDocs, 
   setDoc, 
   updateDoc, 
+  addDoc,
   query, 
   where, 
   arrayUnion,
@@ -68,12 +69,16 @@ export const createCohort = async (
   privacy: CohortPrivacy, 
   ownerId: string,
   maxMembers: number,
+  subjectCategory: string,
+  subjectSubcategory: string,
   description?: string
 ): Promise<Cohort> => {
   const cohortData: any = {
     title,
     privacy,
     ownerId,
+    subjectCategory,
+    subjectSubcategory,
     createdAt: Timestamp.now(),
     settings: { maxMembers: Math.min(5, Math.max(1, maxMembers)) } // Clamp between 1-5
   };

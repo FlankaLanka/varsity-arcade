@@ -5,6 +5,7 @@ import { ArcadeHub } from './pages/ArcadeHub';
 import { AsteroidsGame } from './games/AsteroidsGame';
 import { PacManMathGame } from './games/PacManMathGame';
 import { PHInvadersGame } from './games/PHInvadersGame';
+import { PongArithmeticGame } from './games/PongArithmeticGame';
 import { ResultsPage } from './pages/ResultsPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { ProfilePage } from './pages/ProfilePage';
@@ -29,6 +30,7 @@ function AuthenticatedApp() {
           <Route path="/game/asteroids" element={<AsteroidsGame />} />
           <Route path="/game/pacman-math" element={<PacManMathGame />} />
           <Route path="/game/ph-invaders" element={<PHInvadersGame />} />
+          <Route path="/game/pong-arithmetic" element={<PongArithmeticGame />} />
           <Route path="/results" element={<ResultsPage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />

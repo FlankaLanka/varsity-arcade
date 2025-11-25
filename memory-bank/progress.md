@@ -1,5 +1,17 @@
 # Progress Log
 
+## 2025-11-24 (Session 3)
+- **Pong Math Game Implementation**: Created new educational Pong game with order of operations mechanics
+  - Player paddle on left (W/S keys), AI paddle on right (perfect tracking)
+  - Ball splits into 3 numbered balls when hitting AI paddle
+  - Easy order of operations problems (e.g., "2 + 3 × 4", "(5 + 2) × 3")
+  - Scoring: +1000 points for correct return, -50 points for wrong return or missing correct ball
+  - Visual feedback: Green flash (0.5s) for correct, red flash (0.5s) for wrong/missed
+  - Wrong balls dissolve when returned, correct ball destroys all wrong balls and bounces back
+  - Minimalistic pixel UI with center dividing line
+  - Game state reset on mount/unmount to prevent stale state
+  - Added route `/game/pong-math` and game card to Arcade Hub
+
 ## 2025-11-24 (Session 2)
 - **Projectile Sync Fix**: Fixed bug where clicking to shoot would make all characters fire. Now only the local player's character shoots; each client writes their own projectiles to Firebase.
 - **Firebase-Safe Projectile IDs**: Changed from `proj-{time}-{userId}` (time had decimals) to `proj-{Date.now()}-{random}-{userId}` to avoid invalid Firebase path characters.
@@ -212,3 +224,4 @@
 2. ✅ **Pac-Man: Math Blitz** - Math problem-solving maze game
 3. ✅ **pH Invaders** - Chemistry pH management with Space Invaders gameplay
 4. ✅ **Whiteboard Battle** - Collaborative defense shooter using user drawings
+5. ✅ **Pong Math** - Order of operations math game with classic Pong mechanics

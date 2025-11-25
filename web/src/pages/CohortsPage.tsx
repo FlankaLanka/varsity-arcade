@@ -11,7 +11,7 @@ import { ref, onValue } from 'firebase/database';
 export default function CohortsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'public' | 'friends'>('friends');
+  const [activeTab, setActiveTab] = useState<'public' | 'friends'>('public');
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   
@@ -73,10 +73,10 @@ export default function CohortsPage() {
     navigate(`/cohorts/${cohortId}`);
   };
 
-  const handleCreateCohort = async (title: string, privacy: CohortPrivacy, maxMembers: number, description?: string) => {
+  const handleCreateCohort = async (title: string, privacy: CohortPrivacy, maxMembers: number, subjectCategory: string, subjectSubcategory: string, description?: string) => {
     if (!user) return;
     try {
-      await createCohort(title, privacy, user.id, maxMembers, description);
+      await createCohort(title, privacy, user.id, maxMembers, subjectCategory, subjectSubcategory, description);
       // Refresh lists
       const publicList = await getPublicCohorts();
       setPublicCohorts(publicList);
@@ -89,9 +89,12 @@ export default function CohortsPage() {
   const displayedCohorts = useMemo(() => {
     const cohorts = activeTab === 'friends' ? friendsCohorts : publicCohorts;
     if (!searchQuery.trim()) return cohorts;
+    const query = searchQuery.toLowerCase();
     return cohorts.filter(c => 
-      c.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      c.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      c.title.toLowerCase().includes(query) || 
+      c.description?.toLowerCase().includes(query) ||
+      c.subjectCategory?.toLowerCase().includes(query) ||
+      c.subjectSubcategory?.toLowerCase().includes(query)
     );
   }, [activeTab, friendsCohorts, publicCohorts, searchQuery]);
 
@@ -118,16 +121,6 @@ export default function CohortsPage() {
         <div className="flex flex-col md:flex-row gap-4 items-center bg-gray-900/50 p-4 rounded-lg border border-gray-800">
           <div className="flex bg-gray-800 rounded p-1">
             <button
-              onClick={() => setActiveTab('friends')}
-              className={`px-4 py-2 rounded text-sm font-bold transition-colors ${
-                activeTab === 'friends' 
-                  ? 'bg-neon-blue text-white shadow-[0_0_10px_rgba(41,235,255,0.3)]' 
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              FRIENDS COHORTS
-            </button>
-            <button
               onClick={() => setActiveTab('public')}
               className={`px-4 py-2 rounded text-sm font-bold transition-colors ${
                 activeTab === 'public' 
@@ -136,6 +129,16 @@ export default function CohortsPage() {
               }`}
             >
               PUBLIC COHORTS
+            </button>
+            <button
+              onClick={() => setActiveTab('friends')}
+              className={`px-4 py-2 rounded text-sm font-bold transition-colors ${
+                activeTab === 'friends' 
+                  ? 'bg-neon-blue text-white shadow-[0_0_10px_rgba(41,235,255,0.3)]' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              FRIENDS COHORTS
             </button>
           </div>
 
@@ -202,6 +205,31 @@ function CohortCard({ cohort, onlineCount, onJoin }: { cohort: Cohort; onlineCou
       </div>
 
       <h3 className="text-xl font-bold text-white mb-2 pr-8">{cohort.title}</h3>
+      
+      {/* Subject and Topic */}
+      {cohort.subjectCategory && cohort.subjectCategory !== 'Open Canvas' && (
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-xs font-bold text-neon-cyan uppercase tracking-wider">
+            {cohort.subjectCategory}
+          </span>
+          {cohort.subjectSubcategory && (
+            <>
+              <span className="text-gray-500">•</span>
+              <span className="text-xs text-gray-300">
+                {cohort.subjectSubcategory}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+      {cohort.subjectCategory === 'Open Canvas' && (
+        <div className="mb-2">
+          <span className="text-xs font-bold text-neon-cyan uppercase tracking-wider">
+            Open Canvas
+          </span>
+        </div>
+      )}
+      
       <p className="text-gray-400 text-sm mb-4 line-clamp-2 h-10">
         {cohort.description || "No description provided."}
       </p>
