@@ -58,7 +58,7 @@ export default function AchievementBadge({
   const unlockedDate = getUnlockedDate();
 
   return (
-    <div className="group relative">
+    <div className="group relative" style={{ zIndex: 'auto' }}>
       {/* Badge */}
       <div 
         className={`
@@ -83,7 +83,10 @@ export default function AchievementBadge({
 
       {/* Tooltip */}
       {showTooltip && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999]">
+        <div 
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none" 
+          style={{ zIndex: 10000, position: 'absolute' }}
+        >
           <div className="bg-gray-900 border-2 border-neon-cyan rounded-lg p-3 whitespace-nowrap shadow-xl">
             <div className="text-xs font-['Press_Start_2P'] text-neon-cyan mb-1">
               {achievement.name}

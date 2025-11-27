@@ -8,12 +8,13 @@ import {
   query, 
   where, 
   arrayUnion,
+  arrayRemove,
   Timestamp,
   deleteDoc
 } from 'firebase/firestore';
 import { db, rtdb } from '../lib/firebase';
 import { ref, get } from 'firebase/database';
-import type { UserProfile, GameType, ActivityEntry } from '../types/user';
+import type { UserProfile, GameType, ActivityEntry, Notification, Challenge } from '../types/user';
 import type { Cohort, CohortMember, CohortPrivacy } from '../types/cohort';
 import { calculateLevel, calculateCohortSolveXP, calculateBattleWinXP } from '../utils/xpSystem';
 
@@ -228,53 +229,180 @@ export const searchUsersByUsername = async (searchTerm: string, currentUserId: s
 };
 
 /**
- * Add a friend to user's friends list
+ * Send a friend request (creates notification instead of directly adding)
  */
-export const addFriend = async (userId: string, friendId: string): Promise<boolean> => {
-  // This updates the 'friends' array in the user document
+export const sendFriendRequest = async (requesterId: string, requestedId: string): Promise<boolean> => {
+  // Fetch both profiles
+  const requesterProfile = await getUserProfile(requesterId);
+  const requestedProfile = await getUserProfile(requestedId);
   
-  // Fetch friend profile to store summary
-  const friendProfile = await getUserProfile(friendId);
-  if (!friendProfile) return false;
+  if (!requesterProfile || !requestedProfile) return false;
 
-  // Check if already friends
-  const userProfile = await getUserProfile(userId);
-  if (userProfile?.friends?.some(f => f.id === friendId)) {
+  // Check if already friends (both directions)
+  if (requesterProfile.friends?.some(f => f.id === requestedId) ||
+      requestedProfile.friends?.some(f => f.id === requesterId)) {
     return false; // Already friends
   }
 
-  const friendSummary: Friend = {
-    id: friendProfile.id,
-    username: friendProfile.username,
-    ...(friendProfile.avatar && { avatar: friendProfile.avatar }), // Only include avatar if it exists
-    isOnline: false,
-    currentActivity: 'offline',
-    lastSeen: new Date()
-  };
+  // Check if there's already a pending friend request (both directions)
+  const requestedUserNotifications = requestedProfile.notifications || [];
+  const requesterUserNotifications = requesterProfile.notifications || [];
+  
+  const hasPendingRequestToThem = requestedUserNotifications.some(
+    n => n.type === 'friend-request' && 
+         n.meta?.requesterId === requesterId && 
+         !n.read
+  );
+  
+  const hasPendingRequestFromThem = requesterUserNotifications.some(
+    n => n.type === 'friend-request' && 
+         n.meta?.requesterId === requestedId && 
+         !n.read
+  );
+  
+  if (hasPendingRequestToThem || hasPendingRequestFromThem) {
+    return false; // Request already pending in either direction
+  }
 
-  const userRef = doc(db, 'users', userId);
-  await updateDoc(userRef, {
-    friends: arrayUnion(friendSummary)
+  // Send friend request notification
+  await sendNotification(requestedId, {
+    type: 'friend-request',
+    title: 'Friend Request',
+    message: `${requesterProfile.username} wants to be your friend`,
+    meta: {
+      requesterId: requesterId,
+      requesterUsername: requesterProfile.username,
+    },
   });
   
   return true;
 };
 
 /**
- * Remove a friend from user's friends list
+ * Accept a friend request (adds both users to each other's friends list)
+ */
+export const acceptFriendRequest = async (userId: string, requesterId: string, notificationId?: string): Promise<boolean> => {
+  // Fetch both profiles
+  const userProfile = await getUserProfile(userId);
+  const requesterProfile = await getUserProfile(requesterId);
+  
+  if (!userProfile || !requesterProfile) return false;
+
+  // Check if already friends
+  if (userProfile.friends?.some(f => f.id === requesterId)) {
+    return false; // Already friends
+  }
+
+  // Create friend summaries
+  const requesterFriendSummary: Friend = {
+    id: requesterProfile.id,
+    username: requesterProfile.username,
+    ...(requesterProfile.avatar && { avatar: requesterProfile.avatar }),
+    isOnline: false,
+    currentActivity: 'offline',
+    lastSeen: new Date()
+  };
+
+  const userFriendSummary: Friend = {
+    id: userProfile.id,
+    username: userProfile.username,
+    ...(userProfile.avatar && { avatar: userProfile.avatar }),
+    isOnline: false,
+    currentActivity: 'offline',
+    lastSeen: new Date()
+  };
+
+  // Add to both users' friends lists
+  const userRef = doc(db, 'users', userId);
+  const requesterRef = doc(db, 'users', requesterId);
+  
+  // Remove the notification if notificationId is provided
+  const userNotifications = userProfile.notifications || [];
+  const notificationToRemove = notificationId ? userNotifications.find(n => n.id === notificationId) : null;
+  
+  const updates: any = {
+    friends: arrayUnion(requesterFriendSummary)
+  };
+  
+  if (notificationToRemove) {
+    // Remove the specific notification
+    updates.notifications = userNotifications.filter(n => n.id !== notificationId);
+  }
+  
+  await updateDoc(userRef, updates);
+  
+  await updateDoc(requesterRef, {
+    friends: arrayUnion(userFriendSummary)
+  });
+  
+  // Send notification to requester that their friend request was accepted
+  await sendNotification(requesterId, {
+    type: 'system',
+    title: 'Friend Request Accepted',
+    message: `${userProfile.username} accepted your friend request`,
+  });
+  
+  return true;
+};
+
+/**
+ * Reject a friend request (just removes the notification)
+ */
+export const rejectFriendRequest = async (userId: string, notificationId: string): Promise<void> => {
+  const userRef = doc(db, 'users', userId);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) return;
+  
+  const userData = userDoc.data() as UserProfile;
+  const notifications = userData.notifications || [];
+  
+  // Remove the notification
+  const updatedNotifications = notifications.filter(n => n.id !== notificationId);
+  
+  await updateDoc(userRef, {
+    notifications: updatedNotifications
+  });
+};
+
+/**
+ * Add a friend to user's friends list (legacy - kept for backwards compatibility)
+ * @deprecated Use sendFriendRequest and acceptFriendRequest instead
+ */
+export const addFriend = async (userId: string, friendId: string): Promise<boolean> => {
+  // This is now just an alias for sendFriendRequest for backwards compatibility
+  return await sendFriendRequest(userId, friendId);
+};
+
+/**
+ * Remove a friend from user's friends list (two-way removal)
  */
 export const removeFriend = async (userId: string, friendId: string): Promise<boolean> => {
   const userRef = doc(db, 'users', userId);
+  const friendRef = doc(db, 'users', friendId);
+  
   const userDoc = await getDoc(userRef);
+  const friendDoc = await getDoc(friendRef);
   
   if (!userDoc.exists()) return false;
   
   const userData = userDoc.data() as UserProfile;
-  const updatedFriends = userData.friends?.filter(f => f.id !== friendId) || [];
+  const updatedUserFriends = userData.friends?.filter(f => f.id !== friendId) || [];
   
+  // Remove from current user's friends list
   await updateDoc(userRef, {
-    friends: updatedFriends
+    friends: updatedUserFriends
   });
+  
+  // Remove from friend's friends list (two-way removal)
+  if (friendDoc.exists()) {
+    const friendData = friendDoc.data() as UserProfile;
+    const updatedFriendFriends = friendData.friends?.filter(f => f.id !== userId) || [];
+    
+    await updateDoc(friendRef, {
+      friends: updatedFriendFriends
+    });
+  }
   
   return true;
 };
@@ -448,4 +576,210 @@ export const getLeaderboard = async (
   
   // Return top N entries
   return leaderboard.slice(0, limit);
+};
+
+// --- Notification Services ---
+
+/**
+ * Send a notification to a user
+ */
+export const sendNotification = async (
+  userId: string,
+  notification: Omit<Notification, 'id' | 'createdAt' | 'read'>
+): Promise<void> => {
+  const userRef = doc(db, 'users', userId);
+  
+  const notificationData: Notification = {
+    id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ...notification,
+    createdAt: new Date(),
+    read: false,
+  };
+  
+  await updateDoc(userRef, {
+    notifications: arrayUnion(notificationData)
+  });
+};
+
+/**
+ * Get user's notifications
+ */
+export const getUserNotifications = async (userId: string): Promise<Notification[]> => {
+  const userRef = doc(db, 'users', userId);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) return [];
+  
+  const userData = userDoc.data() as UserProfile;
+  const notifications = userData.notifications || [];
+  
+  // Convert Firestore Timestamps to Dates
+  return notifications.map(notif => ({
+    ...notif,
+    createdAt: notif.createdAt instanceof Date 
+      ? notif.createdAt 
+      : (notif.createdAt as any)?.toDate?.() || new Date(notif.createdAt as any),
+  }));
+};
+
+/**
+ * Mark a notification as read
+ */
+export const markNotificationAsRead = async (
+  userId: string,
+  notificationId: string
+): Promise<void> => {
+  const userRef = doc(db, 'users', userId);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) return;
+  
+  const userData = userDoc.data() as UserProfile;
+  const notifications = userData.notifications || [];
+  
+  const updatedNotifications = notifications.map(notif => 
+    notif.id === notificationId ? { ...notif, read: true } : notif
+  );
+  
+  await updateDoc(userRef, {
+    notifications: updatedNotifications
+  });
+};
+
+/**
+ * Mark all notifications as read
+ */
+export const markAllNotificationsAsRead = async (userId: string): Promise<void> => {
+  const userRef = doc(db, 'users', userId);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) return;
+  
+  const userData = userDoc.data() as UserProfile;
+  const notifications = userData.notifications || [];
+  
+  const updatedNotifications = notifications.map(notif => ({ ...notif, read: true }));
+  
+  await updateDoc(userRef, {
+    notifications: updatedNotifications
+  });
+};
+
+// --- Challenge Services ---
+
+/**
+ * Create a challenge and send notification to challenged user
+ */
+export const createChallenge = async (
+  challengerId: string,
+  challengedId: string,
+  gameType: GameType,
+  scoreToBeat: number
+): Promise<Challenge> => {
+  // Get challenger profile for username
+  const challengerProfile = await getUserProfile(challengerId);
+  if (!challengerProfile) {
+    throw new Error('Challenger profile not found');
+  }
+  
+  // Create challenge document
+  const challengeData: Omit<Challenge, 'id' | 'createdAt'> = {
+    challengerId,
+    challengerUsername: challengerProfile.username,
+    challengedId,
+    gameType,
+    scoreToBeat,
+    status: 'pending',
+  };
+  
+  const challengeRef = await addDoc(collection(db, 'challenges'), {
+    ...challengeData,
+    createdAt: Timestamp.now(),
+  });
+  
+  // Update challenge with its ID
+  await updateDoc(challengeRef, { id: challengeRef.id });
+  
+  const challenge: Challenge = {
+    id: challengeRef.id,
+    ...challengeData,
+    createdAt: new Date(),
+  };
+  
+  // Send notification to challenged user
+  await sendNotification(challengedId, {
+    type: 'challenge',
+    title: 'New Challenge!',
+    message: `${challengerProfile.username} challenged you to beat their score of ${scoreToBeat.toLocaleString()} in ${gameType}`,
+    meta: {
+      challengeId: challengeRef.id,
+      challengerId,
+      challengerUsername: challengerProfile.username,
+      gameType,
+      scoreToBeat,
+    },
+  });
+  
+  return challenge;
+};
+
+/**
+ * Get challenge by ID
+ */
+export const getChallengeById = async (challengeId: string): Promise<Challenge | null> => {
+  const challengeRef = doc(db, 'challenges', challengeId);
+  const challengeDoc = await getDoc(challengeRef);
+  
+  if (!challengeDoc.exists()) return null;
+  
+  const data = challengeDoc.data();
+  return {
+    id: challengeDoc.id,
+    ...data,
+    createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt),
+    completedAt: data.completedAt?.toDate ? data.completedAt.toDate() : (data.completedAt ? new Date(data.completedAt) : undefined),
+  } as Challenge;
+};
+
+/**
+ * Update challenge status
+ */
+export const updateChallengeStatus = async (
+  challengeId: string,
+  status: Challenge['status'],
+  challengerScore?: number
+): Promise<void> => {
+  const challengeRef = doc(db, 'challenges', challengeId);
+  const updateData: any = { status };
+  
+  if (status === 'completed' || status === 'expired') {
+    updateData.completedAt = Timestamp.now();
+  }
+  
+  if (challengerScore !== undefined) {
+    updateData.challengerScore = challengerScore;
+  }
+  
+  await updateDoc(challengeRef, updateData);
+};
+
+/**
+ * Get user's pending challenges (where they are the challenged user)
+ */
+export const getUserPendingChallenges = async (userId: string): Promise<Challenge[]> => {
+  const q = query(
+    collection(db, 'challenges'),
+    where('challengedId', '==', userId),
+    where('status', '==', 'pending')
+  );
+  
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      ...data,
+      createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt),
+    } as Challenge;
+  });
 };

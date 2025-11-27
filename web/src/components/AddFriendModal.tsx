@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Search, UserPlus, Check, Loader2 } from 'lucide-react';
-import { searchUsersByUsername, addFriend, getUserProfile } from '../services/firestore';
+import { searchUsersByUsername, sendFriendRequest, getUserProfile } from '../services/firestore';
 import { checkNewAchievements, unlockAchievements } from '../services/achievements';
 import { useAuth } from '../context/AuthContext';
 import { useAchievements } from '../context/AchievementContext';
@@ -27,6 +27,7 @@ export default function AddFriendModal({ isOpen, onClose, onFriendAdded }: AddFr
   const [isSearching, setIsSearching] = useState(false);
   const [addingFriendId, setAddingFriendId] = useState<string | null>(null);
   const [addedFriendIds, setAddedFriendIds] = useState<Set<string>>(new Set());
+  const [sentRequestIds, setSentRequestIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   // Debounced search
@@ -66,12 +67,62 @@ export default function AddFriendModal({ isOpen, onClose, onFriendAdded }: AddFr
     }
   }, [isOpen]);
 
-  // Update added friends set when user changes
+  // Update added friends set and sent requests when user changes
   useEffect(() => {
     if (user?.friends) {
       setAddedFriendIds(new Set(user.friends.map(f => f.id)));
     }
-  }, [user?.friends]);
+    
+    // Check for sent friend requests (notifications where we are the requester)
+    if (user?.notifications && firebaseUser) {
+      const sentRequests = new Set<string>();
+      user.notifications.forEach(notif => {
+        if (notif.type === 'friend-request' && notif.meta?.requesterId === firebaseUser.uid && !notif.read) {
+          // This means we sent a request, but we need to find who we sent it to
+          // Actually, we can't determine this from our own notifications since the notification goes to the other user
+          // So we need to check the search results' notifications
+        }
+      });
+      setSentRequestIds(sentRequests);
+    }
+  }, [user?.friends, user?.notifications, firebaseUser]);
+  
+  // Check for pending requests when search results change
+  useEffect(() => {
+    const checkPendingRequests = async () => {
+      if (!firebaseUser || searchResults.length === 0) return;
+      
+      const pendingRequests = new Set<string>();
+      
+      // Check each search result to see if we've sent them a request
+      // Batch the checks to avoid too many simultaneous requests
+      const checkPromises = searchResults.map(async (result) => {
+        try {
+          const resultProfile = await getUserProfile(result.id);
+          if (resultProfile?.notifications) {
+            const hasPendingRequest = resultProfile.notifications.some(
+              n => n.type === 'friend-request' && 
+                   n.meta?.requesterId === firebaseUser.uid && 
+                   !n.read
+            );
+            return hasPendingRequest ? result.id : null;
+          }
+        } catch (err) {
+          // Silently fail - don't block UI
+        }
+        return null;
+      });
+      
+      const results = await Promise.all(checkPromises);
+      results.forEach(id => {
+        if (id) pendingRequests.add(id);
+      });
+      
+      setSentRequestIds(pendingRequests);
+    };
+    
+    checkPendingRequests();
+  }, [searchResults, firebaseUser]);
 
   const handleAddFriend = useCallback(async (friendId: string) => {
     if (!firebaseUser) return;
@@ -80,45 +131,23 @@ export default function AddFriendModal({ isOpen, onClose, onFriendAdded }: AddFr
     setError(null);
     
     try {
-      const success = await addFriend(firebaseUser.uid, friendId);
+      const success = await sendFriendRequest(firebaseUser.uid, friendId);
       
       if (success) {
-        setAddedFriendIds(prev => new Set([...prev, friendId]));
-        // Refresh user data to get updated friends list
-        if (refreshUser) {
-          await refreshUser();
-        }
-        
-        // Check for social achievements
-        const updatedProfile = await getUserProfile(firebaseUser.uid);
-        if (updatedProfile) {
-          const newAchievements = checkNewAchievements(updatedProfile, {
-            friendsCount: updatedProfile.friends?.length || 0
-          });
-          
-          if (newAchievements.length > 0) {
-            const { unlockedAchievements } = await unlockAchievements(
-              firebaseUser.uid,
-              newAchievements
-            );
-            
-            if (unlockedAchievements.length > 0) {
-              showAchievements(unlockedAchievements);
-            }
-          }
-        }
-        
+        setSentRequestIds(prev => new Set([...prev, friendId]));
+        // Friend request sent - no need to refresh friends list yet
+        // The other user needs to accept first
         onFriendAdded?.();
       } else {
-        setError('Already friends with this user.');
+        setError('Friend request already sent or already friends.');
       }
     } catch (err) {
-      console.error('Failed to add friend:', err);
-      setError('Failed to add friend. Please try again.');
+      console.error('Failed to send friend request:', err);
+      setError('Failed to send friend request. Please try again.');
     } finally {
       setAddingFriendId(null);
     }
-  }, [firebaseUser, refreshUser, onFriendAdded, showAchievements]);
+  }, [firebaseUser, onFriendAdded]);
 
   const isAlreadyFriend = useCallback((userId: string) => {
     return addedFriendIds.has(userId);
@@ -212,6 +241,11 @@ export default function AddFriendModal({ isOpen, onClose, onFriendAdded }: AddFr
                     <div className="flex items-center gap-1 px-3 py-1.5 bg-neon-green/20 border border-neon-green rounded text-neon-green">
                       <Check className="w-4 h-4" />
                       <span className="text-xs font-medium">Added</span>
+                    </div>
+                  ) : sentRequestIds.has(result.id) ? (
+                    <div className="flex items-center gap-1 px-3 py-1.5 bg-gray-700/50 border border-gray-600 rounded text-gray-400">
+                      <Check className="w-4 h-4" />
+                      <span className="text-xs font-medium">Sent</span>
                     </div>
                   ) : (
                     <button

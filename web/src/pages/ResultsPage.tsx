@@ -1,13 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Share2, Users, Trophy, ArrowRight } from 'lucide-react';
+import type { GameType } from '../types/user';
+import ChallengeFriendModal from '../components/ChallengeFriendModal';
 
 export const ResultsPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { score, game } = location.state || { score: 0, game: 'Unknown' };
+  const { score, game, gameType } = location.state || { score: 0, game: 'Unknown', gameType: 'asteroids' as GameType };
+  
+  // Map gameType to route path
+  const getGameRoute = (type: GameType): string => {
+    const routeMap: Record<GameType, string> = {
+      'asteroids': '/game/asteroids',
+      'pacman-math': '/game/pacman-math',
+      'ph-invaders': '/game/ph-invaders',
+      'pong-arithmetic': '/game/pong-arithmetic',
+    };
+    return routeMap[type] || '/game/asteroids';
+  };
   
   const [loopTriggered, setLoopTriggered] = useState(false);
+  const [isChallengeModalOpen, setIsChallengeModalOpen] = useState(false);
 
   // Simulate Orchestrator Agent
   useEffect(() => {
@@ -55,7 +69,10 @@ export const ResultsPage = () => {
                 The <span className="text-neon-cyan">Loop Orchestrator</span> has identified you as a top performer. Challenge a friend to beat your score and earn a <span className="text-neon-yellow">Streak Shield</span>!
               </p>
               
-              <button className="retro-btn bg-neon-pink text-white border-neon-pink hover:bg-white hover:text-black w-full sm:w-auto flex items-center justify-center gap-2 mx-auto">
+              <button 
+                onClick={() => setIsChallengeModalOpen(true)}
+                className="retro-btn bg-neon-pink text-white border-neon-pink hover:bg-white hover:text-black w-full sm:w-auto flex items-center justify-center gap-2 mx-auto"
+              >
                 <Share2 size={16} />
                 CHALLENGE FRIEND
               </button>
@@ -75,12 +92,21 @@ export const ResultsPage = () => {
           BACK TO HUB
         </button>
         <button 
-          onClick={() => navigate('/game/asteroids')}
+          onClick={() => navigate(getGameRoute(gameType))}
           className="retro-btn border-neon-cyan text-neon-cyan hover:bg-neon-cyan hover:text-black"
         >
           PLAY AGAIN <ArrowRight size={16} className="inline ml-2" />
         </button>
       </div>
+
+      {/* Challenge Friend Modal */}
+      <ChallengeFriendModal
+        isOpen={isChallengeModalOpen}
+        onClose={() => setIsChallengeModalOpen(false)}
+        score={score}
+        gameType={gameType}
+        gameName={game}
+      />
     </div>
   );
 };

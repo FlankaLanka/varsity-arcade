@@ -86,11 +86,12 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
 
   return (
     <div 
-      className="absolute top-full right-0 mt-2 w-96 z-50"
+      className="absolute top-full right-0 mt-2 w-96 z-[100]"
       onClick={(e) => e.stopPropagation()}
+      style={{ overflow: 'visible' }}
     >
       {/* Main Dropdown Container */}
-      <div className="bg-gray-900/95 backdrop-blur-md border-2 border-neon-cyan rounded-lg shadow-2xl max-h-[calc(100vh-100px)] flex flex-col overflow-visible">
+      <div className="bg-gray-900/95 backdrop-blur-md border-2 border-neon-cyan rounded-lg shadow-2xl max-h-[calc(100vh-100px)] flex flex-col" style={{ overflow: 'visible' }}>
         {/* Header Section */}
         <div className="relative p-6 bg-gradient-to-br from-purple-900/50 to-blue-900/50 border-b-2 border-neon-cyan/30">
           {/* Scanline Effect */}
@@ -136,7 +137,7 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
         </div>
 
         {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto" style={{ overflowX: 'visible' }}>
+        <div className="flex-1 overflow-y-auto overflow-x-visible" style={{ position: 'relative' }}>
           {/* Stats Grid */}
           <div className="grid grid-cols-2 gap-3 p-4 bg-gray-800/30 border-b-2 border-gray-800">
           {/* Streak */}
@@ -185,7 +186,7 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
         </div>
 
         {/* Recent Achievements */}
-        <div className="p-4 border-b-2 border-gray-800 overflow-visible">
+        <div className="p-4 border-b-2 border-gray-800" style={{ overflow: 'visible', position: 'relative', zIndex: 1 }}>
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-xs font-['Press_Start_2P'] text-neon-yellow flex items-center gap-2">
               <Trophy className="w-3 h-3" />
@@ -198,7 +199,7 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
               View All
             </button>
           </div>
-          <div className="flex gap-2 overflow-visible">
+          <div className="flex gap-2" style={{ overflow: 'visible', position: 'relative', zIndex: 1 }}>
             {recentAchievements.length > 0 ? (
               recentAchievements.map(achievement => (
                 <AchievementBadge 

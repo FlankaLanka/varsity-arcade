@@ -289,8 +289,9 @@ export const PongArithmeticGame = () => {
               }
             }
             
-            ball.vx = Math.abs(Math.cos(angle) * BALL_SPEED);
-            ball.vy = Math.sin(angle) * BALL_SPEED;
+            // Make ball 2x faster when player returns it to AI
+            ball.vx = Math.abs(Math.cos(angle) * BALL_SPEED * 2);
+            ball.vy = Math.sin(angle) * BALL_SPEED * 2;
             ball.x = px + PADDLE_WIDTH + BALL_RADIUS;
           }
         }

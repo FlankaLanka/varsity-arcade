@@ -182,6 +182,7 @@ export default function CohortRoomPage() {
         
         // Update drawings when battle starts
         if (gameState.mode === 'battle' && gameState.drawings) {
+          console.log('[CohortRoomPage] Battle starting with drawings:', gameState.drawings.length);
           setDrawings(gameState.drawings);
         }
         
@@ -336,7 +337,11 @@ export default function CohortRoomPage() {
       const whiteboardRef = ref(rtdb, `cohorts/${cohortId}/whiteboard`);
       await remove(whiteboardRef);
       
-      // 3. Clear AI chat in RTDB
+      // 3. Clear battle state (enemies, players, projectiles) so next battle starts fresh
+      const battleRef = ref(rtdb, `cohorts/${cohortId}/battle`);
+      await remove(battleRef);
+      
+      // 4. Clear AI chat in RTDB
       const chatRef = ref(rtdb, `cohorts/${cohortId}/chat/messages`);
       await remove(chatRef);
       
@@ -592,6 +597,7 @@ export default function CohortRoomPage() {
             whiteboardSnapshot={mode === 'whiteboard' ? whiteboardSnapshotRef.current : null}
             members={members}
             currentProblem={currentProblem}
+            disabled={mode === 'battle'}
           />
       </div>
     </>

@@ -10,6 +10,8 @@ interface GameFrameProps {
   timeRemaining?: number;
   overlay?: React.ReactNode;
   hideHUD?: boolean; // Option to hide default HUD for custom game UI
+  challengeScoreToBeat?: number;
+  challengerUsername?: string;
 }
 
 export const GameFrame = ({ 
@@ -20,7 +22,9 @@ export const GameFrame = ({
   wave, 
   timeRemaining, 
   overlay,
-  hideHUD = false
+  hideHUD = false,
+  challengeScoreToBeat,
+  challengerUsername
 }: GameFrameProps) => {
   const navigate = useNavigate();
 
@@ -44,12 +48,29 @@ export const GameFrame = ({
         {/* CRT Scanline Overlay */}
         <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 bg-[length:100%_2px,3px_100%] opacity-20 rounded"></div>
         
+        {/* Challenge Banner */}
+        {challengeScoreToBeat && challengerUsername && !overlay && (
+          <div className="absolute top-0 left-0 right-0 z-30 bg-gradient-to-r from-neon-yellow/90 to-neon-pink/90 border-b-2 border-neon-yellow p-2">
+            <div className="text-center font-['Press_Start_2P'] text-black text-[10px]">
+              🎯 CHALLENGE: Beat {challengerUsername}'s score of {challengeScoreToBeat.toLocaleString()}!
+            </div>
+          </div>
+        )}
+
         {/* HUD - Only show if no overlay and not hidden */}
         {!overlay && !hideHUD && (
           <>
             <div className="absolute top-3 left-3 z-20 font-['Press_Start_2P'] text-white">
               <div className="text-neon-cyan text-[8px] mb-0.5">SCORE</div>
               <div className="text-sm">{score.toLocaleString()}</div>
+              {challengeScoreToBeat && (
+                <>
+                  <div className="text-neon-yellow text-[8px] mt-2 mb-0.5">TARGET</div>
+                  <div className={`text-xs ${score >= challengeScoreToBeat ? 'text-neon-green' : 'text-neon-yellow'}`}>
+                    {challengeScoreToBeat.toLocaleString()}
+                  </div>
+                </>
+              )}
         </div>
 
             <div className="absolute top-3 right-3 z-20 font-['Press_Start_2P'] text-white text-right">

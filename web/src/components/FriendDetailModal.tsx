@@ -4,7 +4,7 @@
  * Displays friend information with action buttons.
  */
 
-import { X, UserMinus, ShieldBan, UserRoundSearch } from 'lucide-react';
+import { X, UserMinus, UserRoundSearch } from 'lucide-react';
 import type { Friend } from '../types/user';
 import { formatActivityText, formatLastSeen } from '../utils/formatters';
 
@@ -14,7 +14,6 @@ interface FriendDetailModalProps {
   onClose: () => void;
   onViewProfile: (friend: Friend) => void;
   onRemove: (friendId: string) => void;
-  onBlock: (friendId: string) => void;
 }
 
 export function FriendDetailModal({
@@ -23,7 +22,6 @@ export function FriendDetailModal({
   onClose,
   onViewProfile,
   onRemove,
-  onBlock,
 }: FriendDetailModalProps) {
   if (!open || !friend) return null;
 
@@ -98,13 +96,6 @@ export function FriendDetailModal({
           >
             <UserMinus className="w-4 h-4" />
             Remove Friend
-          </button>
-          <button
-            className="flex items-center justify-center gap-2 border-2 border-red-500 text-red-300 rounded-lg py-2 text-xs font-['Press_Start_2P'] hover:bg-red-500/10 transition-all"
-            onClick={() => handleAction(() => onBlock(friend.id))}
-          >
-            <ShieldBan className="w-4 h-4" />
-            Block User
           </button>
         </div>
       </div>

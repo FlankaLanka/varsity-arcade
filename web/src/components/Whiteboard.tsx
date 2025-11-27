@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Eraser, Undo, Redo, Trash2, PenTool, Check, Circle, Square, Triangle, Move } from 'lucide-react';
-import { ref, onValue, push, set, remove, serverTimestamp, onDisconnect } from 'firebase/database';
+import { ref, onValue, push, set, remove, update, serverTimestamp, onDisconnect, get } from 'firebase/database';
 import { rtdb } from '../lib/firebase';
 import type { WhiteboardDrawing, CohortProblem, AIChatMessage } from '../types/cohort';
 import { throttle } from '../utils/throttle';
@@ -54,6 +54,21 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
   const [countdown, setCountdown] = useState<number | null>(null);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursor>>({});
   const lastCursorPosition = useRef<{ x: number; y: number } | null>(null);
+  const [verifyingUserId, setVerifyingUserId] = useState<string | null>(null);
+  const [verifyingUsername, setVerifyingUsername] = useState<string | null>(null);
+  
+  // Refs to avoid stale closures in Firebase listeners
+  const drawingsRef = useRef<WhiteboardDrawing[]>([]);
+  const onVerifySuccessRef = useRef(onVerifySuccess);
+  
+  // Keep refs updated
+  useEffect(() => {
+    drawingsRef.current = drawings;
+  }, [drawings]);
+  
+  useEffect(() => {
+    onVerifySuccessRef.current = onVerifySuccess;
+  }, [onVerifySuccess]);
   
   // Camera/Viewport state for infinite canvas (use refs for instant updates)
   const cameraX = useRef(0);
@@ -128,6 +143,66 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
     return () => {
       unsubscribe();
       remove(myCursorRef).catch(() => {});
+    };
+  }, [cohortId, currentUser]);
+
+  // Listen for verification state from Firebase
+  useEffect(() => {
+    if (!cohortId || !currentUser) return;
+
+    const verificationRef = ref(rtdb, `cohorts/${cohortId}/verification`);
+    let currentVerifyingUserId: string | null = null;
+    
+    const unsubscribe = onValue(verificationRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        // Someone is verifying
+        currentVerifyingUserId = data.userId || null;
+        setIsVerifying(true);
+        setVerifyingUserId(currentVerifyingUserId);
+        setVerifyingUsername(data.username || 'Someone');
+        
+        // If countdown is set, use it; otherwise use message
+        if (data.countdown !== undefined && data.countdown !== null) {
+          setCountdown(data.countdown);
+          setVerificationMessage('GET READY!');
+          
+          // If countdown reaches 0, start battle (all clients will see this)
+          if (data.countdown === 0 || data.countdown < 1) {
+            // Small delay to ensure all clients see the final countdown
+            setTimeout(() => {
+              const currentDrawings = drawingsRef.current;
+              console.log('[Whiteboard] Starting battle with drawings:', currentDrawings.length);
+              setIsVerifying(false);
+              setCountdown(null);
+              setVerificationMessage(null);
+              onVerifySuccessRef.current(currentDrawings);
+            }, 100);
+          }
+        } else {
+          setCountdown(null);
+          setVerificationMessage(data.message || 'Checking your work...');
+        }
+      } else {
+        // Verification state cleared - reset everything
+        currentVerifyingUserId = null;
+        setIsVerifying(false);
+        setVerifyingUserId(null);
+        setVerifyingUsername(null);
+        setVerificationMessage(null);
+        setCountdown(null);
+      }
+    });
+
+    // Cleanup: If I'm verifying and I disconnect, clear the verification state
+    onDisconnect(verificationRef).remove();
+
+    return () => {
+      unsubscribe();
+      // If I was verifying, clear it when component unmounts
+      if (currentVerifyingUserId === currentUser.id) {
+        remove(verificationRef).catch(() => {});
+      }
     };
   }, [cohortId, currentUser]);
 
@@ -678,22 +753,61 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
     });
   };
 
-  const startCountdown = useCallback(() => {
-    setCountdown(3);
+  const startCountdown = useCallback(async () => {
+    if (!cohortId) {
+      // Fallback for non-cohort mode
+      setCountdown(3);
+      const countdownInterval = setInterval(() => {
+        setCountdown(prev => {
+          if (prev === null || prev <= 1) {
+            clearInterval(countdownInterval);
+            setIsVerifying(false);
+            setCountdown(null);
+            onVerifySuccess(drawings);
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return;
+    }
+
+    // Sync countdown to Firebase so all users see it
+    // Don't set countdown locally - let Firebase listener handle it
+    const verificationRef = ref(rtdb, `cohorts/${cohortId}/verification`);
     
-    const countdownInterval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev === null || prev <= 1) {
-          clearInterval(countdownInterval);
-          setIsVerifying(false);
-          setCountdown(null);
-          onVerifySuccess(drawings);
-          return null;
-        }
-        return prev - 1;
-      });
+    // Update Firebase with countdown state (this will trigger listeners on all clients)
+    await update(verificationRef, {
+      countdown: 3,
+      message: 'GET READY!'
+    });
+    
+    // Use a local interval to update Firebase countdown
+    // All clients will see the updates through the Firebase listener
+    let currentCount = 3;
+    const countdownInterval = setInterval(async () => {
+      currentCount -= 1;
+      
+      if (currentCount <= 0) {
+        clearInterval(countdownInterval);
+        // Set countdown to 0 so all clients see it, then clear after a brief moment
+        await update(verificationRef, {
+          countdown: 0,
+          message: 'GET READY!'
+        });
+        // Clear verification state after all clients have seen countdown 0
+        setTimeout(async () => {
+          await remove(verificationRef);
+        }, 200);
+      } else {
+        // Update Firebase with current countdown (all clients will see this)
+        await update(verificationRef, {
+          countdown: currentCount,
+          message: 'GET READY!'
+        });
+      }
     }, 1000);
-  }, [drawings, onVerifySuccess]);
+  }, [drawings, onVerifySuccess, cohortId]);
 
   // Capture whiteboard snapshot as base64 image
   const captureSnapshot = useCallback(async (): Promise<string | null> => {
@@ -784,34 +898,70 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
   }, [captureSnapshot, onSnapshotRequest]);
 
   const handleVerify = async () => {
+    if (!cohortId || !currentUser) return;
+    
+    // Check if someone else is already verifying (double-check with Firebase)
+    const verificationRef = ref(rtdb, `cohorts/${cohortId}/verification`);
+    const snapshot = await get(verificationRef);
+    const existingVerification = snapshot.val();
+    
+    if (existingVerification && existingVerification.userId !== currentUser.id) {
+      // Someone else is already verifying
+      return;
+    }
+    
+    // Try to set verification state (this acts as a lock)
+    try {
+      await set(verificationRef, {
+        userId: currentUser.id,
+        username: currentUser.username,
+        message: 'Checking your work...',
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      // Failed to acquire lock, someone else might have started
+      console.error('Failed to start verification:', error);
+      return;
+    }
+
     if (!currentProblem) {
       // No problem set, just start battle immediately (fallback)
-      setIsVerifying(true);
-      setTimeout(() => {
-        setIsVerifying(false);
+      await update(verificationRef, {
+        message: 'Starting battle...'
+      });
+      
+      setTimeout(async () => {
+        await remove(verificationRef);
         onVerifySuccess(drawings);
       }, 2000);
       return;
     }
 
-    setIsVerifying(true);
-    setVerificationMessage('Checking your work...');
-
     try {
       // Fetch current chat messages from Firebase
       const messages = await fetchChatMessages();
+      
+      // Update message in Firebase
+      await update(verificationRef, {
+        message: 'Checking your work...'
+      });
       
       // First try to verify via chat history
       let result = await verifySolution(currentProblem, messages, null);
 
       // If AI needs whiteboard to verify, capture and send it
       if (result.needsWhiteboard && drawings.length > 0) {
-        setVerificationMessage('Checking your whiteboard work...');
+        await update(verificationRef, {
+          message: 'Checking your whiteboard work...'
+        });
         const whiteboardImage = await captureSnapshot();
         result = await verifySolution(currentProblem, messages, whiteboardImage);
       }
 
-      setVerificationMessage(result.message);
+      // Update with result message
+      await update(verificationRef, {
+        message: result.message
+      });
       
       // Notify parent of verification message (to display in chat)
       if (onVerificationMessage) {
@@ -820,23 +970,23 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
 
       if (result.solved) {
         // Start countdown after showing success message
-        setTimeout(() => {
-          setVerificationMessage(null);
-          startCountdown();
+        // Keep verification state active during countdown
+        setTimeout(async () => {
+          await startCountdown();
         }, 2000);
       } else {
         // Not solved yet, clear after showing message
-        setTimeout(() => {
-          setIsVerifying(false);
-          setVerificationMessage(null);
+        setTimeout(async () => {
+          await remove(verificationRef);
         }, 3000);
       }
     } catch (error) {
       console.error('Verification error:', error);
-      setVerificationMessage('Error verifying solution. Please try again.');
-      setTimeout(() => {
-        setIsVerifying(false);
-        setVerificationMessage(null);
+      await update(verificationRef, {
+        message: 'Error verifying solution. Please try again.'
+      });
+      setTimeout(async () => {
+        await remove(verificationRef);
       }, 2000);
     }
   };
@@ -886,7 +1036,12 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
           ) : verificationMessage ? (
             // Verification message display
             <div className="flex flex-col items-center max-w-lg px-6 text-center">
-              {verificationMessage.toLowerCase().includes('great job') ? (
+              {verifyingUsername && verifyingUserId !== currentUser?.id && (
+                <div className="text-neon-yellow font-['Press_Start_2P'] text-sm mb-2">
+                  {verifyingUsername} is verifying...
+                </div>
+              )}
+              {verificationMessage.toLowerCase().includes('great job') || verificationMessage.toLowerCase().includes('correct') ? (
                 <>
                   <div className="text-6xl mb-4">🎉</div>
                   <div className="text-neon-green font-['Press_Start_2P'] text-xl mb-4">
@@ -895,7 +1050,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
                 </>
               ) : (
                 <div className="text-neon-cyan font-['Press_Start_2P'] text-lg mb-4 animate-pulse">
-                  CHECKING...
+                  {verifyingUserId === currentUser?.id ? 'CHECKING...' : 'AI IS VERIFYING...'}
                 </div>
               )}
               <p className="text-white text-lg leading-relaxed">
@@ -906,7 +1061,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
             // Default loading state
             <>
               <div className="text-neon-cyan font-['Press_Start_2P'] text-xl mb-4 animate-pulse">
-                VERIFYING SOLUTION...
+                {verifyingUserId === currentUser?.id ? 'VERIFYING SOLUTION...' : verifyingUsername ? `${verifyingUsername} IS VERIFYING...` : 'VERIFYING SOLUTION...'}
               </div>
               <div className="w-64 h-2 bg-gray-800 rounded-full overflow-hidden">
                 <div className="h-full bg-neon-cyan animate-[loading_2s_ease-in-out_infinite]" style={{ width: '100%' }}></div>
@@ -1035,7 +1190,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
           onClick={handleVerify}
           disabled={drawings.length === 0 || isVerifying}
           className="w-12 h-12 bg-neon-green hover:bg-neon-green/80 disabled:opacity-50 disabled:cursor-not-allowed text-black rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(41,255,100,0.4)] transition-all hover:scale-110 disabled:hover:scale-100"
-          title="Verify Solution"
+          title={isVerifying && verifyingUserId !== currentUser?.id ? `${verifyingUsername} is verifying...` : "Verify Solution"}
         >
           <Check size={24} />
         </button>

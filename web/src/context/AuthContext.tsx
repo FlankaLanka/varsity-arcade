@@ -75,6 +75,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             }
             
+            // Ensure notifications array exists
+            if (!userData.notifications) {
+              userData.notifications = [];
+              updates.notifications = [];
+              needsUpdate = true;
+            }
+            
+            // Convert Firestore Timestamps to Dates for notifications
+            if (userData.notifications && userData.notifications.length > 0) {
+              userData.notifications = userData.notifications.map(notif => ({
+                ...notif,
+                createdAt: notif.createdAt instanceof Date 
+                  ? notif.createdAt 
+                  : (notif.createdAt as any)?.toDate?.() || new Date(notif.createdAt as any),
+              }));
+            }
+            
             // Apply updates if needed
             if (needsUpdate) {
               await updateDoc(userDocRef, updates);
@@ -137,7 +154,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         'ph-invaders': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
         'pong-arithmetic': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
       },
-      activityHistory: []
+      activityHistory: [],
+      notifications: []
     };
 
     await setDoc(doc(db, 'users', firebaseUser.uid), newUserProfile);
@@ -158,7 +176,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userDoc = await getDoc(userDocRef);
       
       if (userDoc.exists()) {
-        setUser(userDoc.data() as UserProfile);
+        const userData = userDoc.data() as UserProfile;
+        
+        // Convert Firestore Timestamps to Dates for notifications
+        if (userData.notifications && userData.notifications.length > 0) {
+          userData.notifications = userData.notifications.map(notif => ({
+            ...notif,
+            createdAt: notif.createdAt instanceof Date 
+              ? notif.createdAt 
+              : (notif.createdAt as any)?.toDate?.() || new Date(notif.createdAt as any),
+          }));
+        }
+        
+        setUser(userData);
       }
     } catch (error) {
       console.error("Error refreshing user profile:", error);

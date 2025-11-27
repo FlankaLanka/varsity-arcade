@@ -20,6 +20,7 @@ export interface UserProfile {
   friends: Friend[];
   gameStats: Record<GameType, GameStatSummary>;
   activityHistory: ActivityEntry[];
+  notifications: Notification[];
 }
 
 export interface Achievement {
@@ -54,6 +55,38 @@ export interface Friend {
 export type GameType = 'asteroids' | 'pacman-math' | 'ph-invaders' | 'pong-arithmetic';
 export type AchievementType = 'first-game' | 'score-milestone' | 'streak-milestone' | 'game-specific' | 'cohort' | 'social' | 'level' | 'variety';
 export type QuestType = 'play-games' | 'score-milestone' | 'complete-variety' | 'maintain-streak';
+
+export interface Notification {
+  id: string;
+  type: 'challenge' | 'achievement' | 'friend-request' | 'system';
+  title: string;
+  message: string;
+  createdAt: Date;
+  read: boolean;
+  actionUrl?: string;
+  meta?: {
+    challengeId?: string;
+    challengerId?: string;
+    challengerUsername?: string;
+    gameType?: GameType;
+    scoreToBeat?: number;
+    requesterId?: string;
+    requesterUsername?: string;
+  };
+}
+
+export interface Challenge {
+  id: string;
+  challengerId: string;
+  challengerUsername: string;
+  challengedId: string;
+  gameType: GameType;
+  scoreToBeat: number;
+  createdAt: Date;
+  status: 'pending' | 'accepted' | 'completed' | 'expired';
+  completedAt?: Date;
+  challengerScore?: number;
+}
 
 export interface GameStatSummary {
   highScore: number;

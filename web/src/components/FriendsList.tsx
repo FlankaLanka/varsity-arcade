@@ -45,8 +45,9 @@ export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
     
     try {
       await removeFriend(firebaseUser.uid, friendId);
-    setFriends(prev => prev.filter(friend => friend.id !== friendId));
-      // Refresh user data
+      // Update local state immediately
+      setFriends(prev => prev.filter(friend => friend.id !== friendId));
+      // Refresh user data to ensure sync
       if (refreshUser) {
         await refreshUser();
       }
@@ -55,11 +56,6 @@ export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
     }
   };
 
-  const handleBlockFriend = async (friendId: string) => {
-    // For now, blocking is the same as removing
-    // In a full implementation, you'd also add to a blocked list
-    await handleRemoveFriend(friendId);
-  };
 
   const handleOpenAddFriend = () => {
     onClose(); // Close the friends list dropdown
@@ -195,7 +191,6 @@ export default function FriendsList({ isOpen, onClose }: FriendsListProps) {
           navigate(`/friend/${friend.id}`);
         }}
         onRemove={handleRemoveFriend}
-        onBlock={handleBlockFriend}
       />
 
       {/* Add Friend Modal */}

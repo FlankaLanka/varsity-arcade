@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { GameFrame } from '../components/GameFrame';
 import { useGameCompletion } from '../hooks/useGameCompletion';
+import { updateChallengeStatus, getChallengeById } from '../services/firestore';
+import { useAuth } from '../context/AuthContext';
 
 interface GameObject {
   x: number;
@@ -40,6 +43,8 @@ const createInitialGameState = () => ({
 });
 
 export const AsteroidsGame = () => {
+  const location = useLocation();
+  const { firebaseUser } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
@@ -49,10 +54,30 @@ export const AsteroidsGame = () => {
   const [timeRemaining, setTimeRemaining] = useState(60);
   const [targetWord] = useState(() => VOCAB_DECK[Math.floor(Math.random() * VOCAB_DECK.length)]);
   
+  // Challenge context from location state
+  const challengeId = (location.state as any)?.challengeId;
+  const challengeScoreToBeat = (location.state as any)?.scoreToBeat;
+  const challengerUsername = (location.state as any)?.challengerUsername;
+  
   const gameStateRef = useRef(createInitialGameState());
   const animationIdRef = useRef<number | null>(null);
 
   const { completeGame } = useGameCompletion({ gameType: 'asteroids', gameName: 'Asteroids' });
+  
+  // Handle challenge completion
+  const handleChallengeCompletion = useCallback(async (finalScore: number) => {
+    if (!challengeId || !firebaseUser) return;
+    
+    try {
+      const challenge = await getChallengeById(challengeId);
+      if (challenge && challenge.status === 'accepted') {
+        // Mark challenge as completed regardless of score
+        await updateChallengeStatus(challengeId, 'completed', finalScore);
+      }
+    } catch (error) {
+      console.error('Failed to update challenge status:', error);
+    }
+  }, [challengeId, firebaseUser]);
 
   const startGame = useCallback(() => {
     // Reset all state
@@ -504,6 +529,8 @@ export const AsteroidsGame = () => {
         wave={wave} 
         timeRemaining={timeRemaining}
         aspectRatio={16/9}
+        challengeScoreToBeat={challengeScoreToBeat}
+        challengerUsername={challengerUsername}
         overlay={
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80">
            <h2 className="text-3xl text-neon-pink font-['Press_Start_2P'] mb-4 animate-pulse">GAME OVER</h2>
@@ -517,7 +544,12 @@ export const AsteroidsGame = () => {
                RETRY
              </button>
              <button 
-                onClick={() => completeGame(score)}
+                onClick={async () => {
+                  if (challengeId) {
+                    await handleChallengeCompletion(score);
+                  }
+                  completeGame(score);
+                }}
                 className="retro-btn border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white text-xs"
              >
                CONTINUE
@@ -532,7 +564,16 @@ export const AsteroidsGame = () => {
   }
 
   return (
-    <GameFrame title="ASTEROIDS" score={score} lives={lives} wave={wave} timeRemaining={timeRemaining} aspectRatio={16/9}>
+    <GameFrame 
+      title="ASTEROIDS" 
+      score={score} 
+      lives={lives} 
+      wave={wave} 
+      timeRemaining={timeRemaining} 
+      aspectRatio={16/9}
+      challengeScoreToBeat={challengeScoreToBeat}
+      challengerUsername={challengerUsername}
+    >
       <canvas ref={canvasRef} className="w-full h-full bg-transparent" />
       
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-space-800/80 border border-neon-cyan px-4 py-1.5 rounded">

@@ -1,25 +1,46 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { StarfieldBackground } from './StarfieldBackground';
-import { Gamepad2, Trophy, Users, UserCircle2 } from 'lucide-react';
+import { Gamepad2, Trophy, Users, UserCircle2, Bell } from 'lucide-react';
 import { clsx } from 'clsx';
 import ProfileDropdown from './ProfileDropdown';
 import FriendsList from './FriendsList';
+import NotificationDropdown from './NotificationDropdown';
+import ChallengeDetailsModal from './ChallengeDetailsModal';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useAuth } from '../context/AuthContext';
+import type { Notification } from '../types/user';
 
 export const Layout = () => {
   const location = useLocation();
   const { user } = useAuth();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isFriendsOpen, setIsFriendsOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
+  const [isChallengeModalOpen, setIsChallengeModalOpen] = useState(false);
   
   const profileRef = useRef<HTMLDivElement>(null);
   const friendsRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns when clicking outside
   useClickOutside(profileRef, () => setIsProfileOpen(false), isProfileOpen);
   useClickOutside(friendsRef, () => setIsFriendsOpen(false), isFriendsOpen);
+  useClickOutside(notificationsRef, () => setIsNotificationsOpen(false), isNotificationsOpen);
+
+  // Count unread notifications
+  const unreadNotificationCount = useMemo(() => {
+    return user?.notifications?.filter(n => !n.read).length || 0;
+  }, [user?.notifications]);
+
+  const handleNotificationClick = (notification: Notification) => {
+    if (notification.type === 'challenge') {
+      setSelectedNotification(notification);
+      setIsChallengeModalOpen(true);
+      setIsNotificationsOpen(false);
+    }
+  };
 
   // Count online friends for badge
   const onlineFriendsCount = user?.friends?.filter(f => f.isOnline).length || 0;
@@ -64,6 +85,40 @@ export const Layout = () => {
             <div className="hidden sm:flex flex-col items-end text-xs">
               <span className="text-neon-green font-pixel">ONLINE: 42</span>
               <span className="text-gray-500">SERVER: US-EAST</span>
+            </div>
+
+            {/* Notifications Button */}
+            <div className="relative" ref={notificationsRef}>
+              <button 
+                className={clsx(
+                  "relative w-10 h-10 border-2 flex items-center justify-center transition-all",
+                  isNotificationsOpen 
+                    ? "border-neon-yellow bg-neon-yellow/20" 
+                    : "border-space-700 hover:bg-space-700 hover:border-neon-yellow/50"
+                )}
+                onClick={() => {
+                  setIsNotificationsOpen(!isNotificationsOpen);
+                  setIsProfileOpen(false);
+                  setIsFriendsOpen(false);
+                }}
+                title="Notifications"
+              >
+                <Bell size={20} className={isNotificationsOpen ? "text-neon-yellow" : ""} />
+                {/* Unread Badge */}
+                {unreadNotificationCount > 0 && (
+                  <div className="absolute -top-1 -right-1 w-5 h-5 bg-neon-pink border-2 border-space-900 rounded-full flex items-center justify-center">
+                    <span className="text-xs font-['Press_Start_2P'] text-white">
+                      {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                    </span>
+                  </div>
+                )}
+              </button>
+              
+              <NotificationDropdown 
+                isOpen={isNotificationsOpen} 
+                onClose={() => setIsNotificationsOpen(false)}
+                onChallengeClick={handleNotificationClick}
+              />
             </div>
 
             {/* Friends List Button */}
@@ -124,6 +179,16 @@ export const Layout = () => {
           </div>
         </div>
       </header>
+
+      {/* Challenge Details Modal */}
+      <ChallengeDetailsModal
+        isOpen={isChallengeModalOpen}
+        onClose={() => {
+          setIsChallengeModalOpen(false);
+          setSelectedNotification(null);
+        }}
+        notification={selectedNotification}
+      />
 
       {/* Main Content */}
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-6 fade-in">

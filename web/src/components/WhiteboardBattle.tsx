@@ -61,6 +61,8 @@ export default function WhiteboardBattle({
   currentUserId,
   cohortId
 }: WhiteboardBattleProps) {
+  //console.log('[WhiteboardBattle] Mounted with drawings:', drawings.length, 'members:', members.length);
+  
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number | null>(null);
   const keysRef = useRef<{ [key: string]: boolean }>({});
@@ -254,132 +256,144 @@ export default function WhiteboardBattle({
   }, [cohortId, enemiesCount, gameInitialized, gameOver, gameWon]);
 
 
-  // Initialize Game (Local or Host init)
+  // Initialize Game - Any user can initialize, we check Firebase to avoid duplicates
   useEffect(() => {
     if (!canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const width = canvas.parentElement?.clientWidth || 800;
-    const height = canvas.parentElement?.clientHeight || 600;
-    canvas.width = width;
-    canvas.height = height;
-
-    // Initialize Players locally first
-    const initialPlayers: Player[] = members.map((member) => {
-      const padding = 50;
-      const spawnX = padding + Math.random() * (width - padding * 2);
-      const spawnY = padding + Math.random() * (height - padding * 2);
+    
+    const initializeGame = async () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
       
-      let avatarImg: HTMLImageElement | undefined;
-      if (member.avatar) {
-        avatarImg = new Image();
-        avatarImg.src = member.avatar;
+      const width = canvas.parentElement?.clientWidth || 800;
+      const height = canvas.parentElement?.clientHeight || 600;
+      canvas.width = width;
+      canvas.height = height;
+
+      // Initialize Players locally first
+      const initialPlayers: Player[] = members.map((member) => {
+        const padding = 50;
+        const spawnX = padding + Math.random() * (width - padding * 2);
+        const spawnY = padding + Math.random() * (height - padding * 2);
+        
+        let avatarImg: HTMLImageElement | undefined;
+        if (member.avatar) {
+          avatarImg = new Image();
+          avatarImg.src = member.avatar;
+        }
+
+        return {
+          id: member.userId,
+          x: spawnX,
+          y: spawnY,
+          radius: 20,
+          color: member.userId === currentUserId ? '#00FFFF' : '#CCCCCC',
+          speed: 3,
+          isAlive: true,
+          health: 100,
+          username: member.username,
+          avatarUrl: member.avatar,
+          avatarImg
+        };
+      });
+
+      gameStateRef.current.players = initialPlayers;
+      victoryAnnouncedRef.current = false;
+      enemySnapshotReadyRef.current = false;
+      
+      // Initialize camera to center on current player
+      const currentPlayer = initialPlayers.find(p => p.id === currentUserId);
+      if (currentPlayer && canvasRef.current) {
+        cameraX.current = currentPlayer.x - canvasRef.current.width / 2;
+        cameraY.current = currentPlayer.y - canvasRef.current.height / 2;
+      }
+      
+      // Create enemies from drawings
+      const initialEnemies: Enemy[] = [];
+      drawings.forEach((drawing, index) => {
+        if (drawing.path.length < 2) return;
+        const center = getPathCenter(drawing.path);
+        const relativePath = drawing.path.map(p => ({ x: p.x - center.x, y: p.y - center.y }));
+
+        initialEnemies.push({
+          id: `enemy-${index}`,
+          path: drawing.path.map(p => ({ ...p })),
+          originalPath: relativePath,
+          center: { ...center },
+          color: drawing.color,
+          speed: 0.5 + Math.random() * 0.5,
+          scale: 1.0,
+          maxScale: 2.0 + Math.random() * 0.5,
+          growthRate: 0.002 + Math.random() * 0.002,
+          health: 1
+        });
+      });
+      
+      console.log('[WhiteboardBattle] Spawning enemies:', initialEnemies.length, 'from drawings:', drawings.length);
+      
+      gameStateRef.current.enemies = initialEnemies;
+      setEnemiesCount(initialEnemies.length);
+
+      // Sync enemies and players to Firebase
+      if (cohortId) {
+        // Build the complete enemies and players objects to replace existing ones
+        const enemiesObject: Record<string, Enemy> = {};
+        initialEnemies.forEach(e => {
+          enemiesObject[e.id] = e;
+        });
+        
+        const playersObject: Record<string, any> = {};
+        initialPlayers.forEach(p => {
+          // Don't save the HTMLImageElement, and remove undefined values
+          const { avatarImg, ...playerData } = p;
+          // Filter out undefined values (Firebase RTDB doesn't allow undefined)
+          const cleanPlayerData: any = {};
+          Object.entries(playerData).forEach(([key, value]) => {
+            if (value !== undefined) {
+              cleanPlayerData[key] = value;
+            }
+          });
+          playersObject[p.id] = cleanPlayerData;
+        });
+        
+        // Use set to completely replace the enemies and players nodes
+        set(ref(rtdb, `cohorts/${cohortId}/battle/enemies`), enemiesObject).catch(err => 
+          console.error('Failed to sync enemies:', err)
+        );
+        set(ref(rtdb, `cohorts/${cohortId}/battle/players`), playersObject).catch(err => 
+          console.error('Failed to sync players:', err)
+        );
       }
 
-      return {
-        id: member.userId,
-        x: spawnX,
-        y: spawnY,
-        radius: 20,
-        color: member.userId === currentUserId ? '#00FFFF' : '#CCCCCC',
-        speed: 3,
-        isAlive: true,
-        health: 100,
-        username: member.username,
-        avatarUrl: member.avatar,
-        avatarImg
-      };
-    });
-
-    // If I am the host (or local mode), I initialize the DB
-    // But typically, 'battle' start triggers this on server or one client. 
-    // We'll assume this component mounting means battle started.
-    // We should check if battle state already exists to avoid reset on refresh.
-    
-    gameStateRef.current.players = initialPlayers;
-    victoryAnnouncedRef.current = false;
-    enemySnapshotReadyRef.current = false;
-    
-    // Initialize camera to center on current player
-    const currentPlayer = initialPlayers.find(p => p.id === currentUserId);
-    if (currentPlayer && canvasRef.current) {
-      cameraX.current = currentPlayer.x - canvasRef.current.width / 2;
-      cameraY.current = currentPlayer.y - canvasRef.current.height / 2;
-    }
-    
-    // Host initializes enemies
-    if (isHost || !cohortId) {
-    const initialEnemies: Enemy[] = [];
-    drawings.forEach((drawing, index) => {
-      if (drawing.path.length < 2) return;
-      const center = getPathCenter(drawing.path);
-            const relativePath = drawing.path.map(p => ({ x: p.x - center.x, y: p.y - center.y }));
-
-      initialEnemies.push({
-        id: `enemy-${index}`,
-                path: drawing.path.map(p => ({ ...p })),
-        originalPath: relativePath,
-        center: { ...center },
-        color: drawing.color,
-        speed: 0.5 + Math.random() * 0.5,
-                scale: 1.0,
-        maxScale: 2.0 + Math.random() * 0.5,
-        growthRate: 0.002 + Math.random() * 0.002,
-        health: 1
-      });
-    });
-    
-    gameStateRef.current.enemies = initialEnemies;
-    setEnemiesCount(initialEnemies.length);
-
-        // Initial Sync Push
-        if (cohortId && isHost) {
-            const updates: any = {};
-            initialEnemies.forEach(e => updates[`cohorts/${cohortId}/battle/enemies/${e.id}`] = e);
-            initialPlayers.forEach(p => {
-                // Don't save the HTMLImageElement, and remove undefined values
-                const { avatarImg, ...playerData } = p;
-                // Filter out undefined values (Firebase RTDB doesn't allow undefined)
-                const cleanPlayerData: any = {};
-                Object.entries(playerData).forEach(([key, value]) => {
-                    if (value !== undefined) {
-                        cleanPlayerData[key] = value;
-                    }
-                });
-                updates[`cohorts/${cohortId}/battle/players/${p.id}`] = cleanPlayerData;
-            });
-            update(ref(rtdb), updates);
-        }
-    }
-
-    setGameOver(false);
-    setGameWon(false);
-    setGameInitialized(false);
-    
-    // Reset game state in RTDB when game restarts
-    if (cohortId) {
-      set(ref(rtdb, `cohorts/${cohortId}/battle/gameState`), {
-        gameOver: false,
-        gameWon: false
-      }).catch(() => {});
+      setGameOver(false);
+      setGameWon(false);
+      setGameInitialized(false);
       
-      // Clear any leftover projectiles from previous sessions (host only to avoid race conditions)
-      if (isHost) {
+      // Reset game state in RTDB when game restarts
+      if (cohortId) {
+        set(ref(rtdb, `cohorts/${cohortId}/battle/gameState`), {
+          gameOver: false,
+          gameWon: false
+        }).catch(() => {});
+        
+        // Clear any leftover projectiles (any user can do this now)
         remove(ref(rtdb, `cohorts/${cohortId}/battle/projectiles`)).catch(() => {});
       }
-    }
-    
-    // Clear local projectile state
-    gameStateRef.current.projectiles = [];
+      
+      // Clear local projectile state
+      gameStateRef.current.projectiles = [];
 
-    // Start Loop
-    requestRef.current = requestAnimationFrame(gameLoop);
+      // Start Loop
+      requestRef.current = requestAnimationFrame(gameLoop);
+    };
+
+    initializeGame();
 
     return () => {
       if (requestRef.current !== null) {
         cancelAnimationFrame(requestRef.current);
       }
     };
-  }, [drawings, members, currentUserId, isHost, cohortId]);
+  }, [drawings, members, currentUserId, cohortId]);
 
 
   // Keyboard Input Handling
@@ -574,101 +588,102 @@ export default function WhiteboardBattle({
       });
     }
 
-    // 3. Update Enemies (Host Only Logic)
-    if (isHost || !cohortId) {
-      state.enemies.forEach(enemy => {
-        let nearestPlayer: Player | null = null;
-        let minDist = Infinity;
+    // 3. Update Enemies (all users update locally, host syncs to Firebase)
+    // This ensures smooth local gameplay even if host hasn't synced yet
+    state.enemies.forEach(enemy => {
+      let nearestPlayer: Player | null = null;
+      let minDist = Infinity;
 
-        state.players.forEach(player => {
-          if (!player.isAlive) return;
-          const dx = player.x - enemy.center.x;
-          const dy = player.y - enemy.center.y;
-          const dist = dx * dx + dy * dy;
-          if (dist < minDist) {
-            minDist = dist;
-            nearestPlayer = player;
-          }
-        });
-
-        if (nearestPlayer) {
-          const targetPlayer = nearestPlayer as Player;
-          const dx = targetPlayer.x - enemy.center.x;
-          const dy = targetPlayer.y - enemy.center.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist > 0) {
-            enemy.center.x += (dx / dist) * enemy.speed;
-            enemy.center.y += (dy / dist) * enemy.speed;
-          }
-
-          enemy.path = enemy.originalPath.map(p => ({
-            x: enemy.center.x + p.x * enemy.scale,
-            y: enemy.center.y + p.y * enemy.scale
-          }));
-
-          let hit = false;
-          if (dist < 100) {
-            for (let i = 0; i < enemy.path.length - 1; i++) {
-              if (circleIntersectsSegment(
-                { x: targetPlayer.x, y: targetPlayer.y },
-                targetPlayer.radius,
-                enemy.path[i],
-                enemy.path[i + 1]
-              )) {
-                hit = true;
-                break;
-              }
-            }
-          }
-
-          if (hit) {
-            targetPlayer.health -= 0.5;
-            if (targetPlayer.health <= 0) {
-              targetPlayer.health = 0;
-              targetPlayer.isAlive = false;
-            }
-            healthChanged = true;
-
-            if (cohortId && isHost) {
-              const { avatarImg, ...pData } = targetPlayer;
-              const cleanPlayerData: any = {};
-              Object.entries(pData).forEach(([key, value]) => {
-                if (value !== undefined) {
-                  cleanPlayerData[key] = value;
-                }
-              });
-              update(ref(rtdb, `cohorts/${cohortId}/battle/players/${targetPlayer.id}`), cleanPlayerData);
-            }
-          }
+      state.players.forEach(player => {
+        if (!player.isAlive) return;
+        const dx = player.x - enemy.center.x;
+        const dy = player.y - enemy.center.y;
+        const dist = dx * dx + dy * dy;
+        if (dist < minDist) {
+          minDist = dist;
+          nearestPlayer = player;
         }
       });
 
-      if (cohortId && isHost && time - lastEnemySyncRef.current >= ENEMY_SYNC_INTERVAL) {
-        if (state.enemies.length === 0) {
-          set(ref(rtdb, `cohorts/${cohortId}/battle/enemies`), null).catch((err) =>
-            console.error('Failed to sync empty enemy state:', err)
-          );
-        } else {
-          const enemyPayload: Record<string, Enemy> = {};
-          state.enemies.forEach((enemy) => {
-            enemyPayload[enemy.id] = {
-              ...enemy,
-              path: enemy.path.map((p) => ({ ...p })),
-              originalPath: enemy.originalPath.map((p) => ({ ...p })),
-            };
-          });
-          set(ref(rtdb, `cohorts/${cohortId}/battle/enemies`), enemyPayload).catch((err) =>
-            console.error('Failed to sync enemies:', err)
-          );
+      if (nearestPlayer) {
+        const targetPlayer = nearestPlayer as Player;
+        const dx = targetPlayer.x - enemy.center.x;
+        const dy = targetPlayer.y - enemy.center.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 0) {
+          enemy.center.x += (dx / dist) * enemy.speed;
+          enemy.center.y += (dy / dist) * enemy.speed;
         }
-        lastEnemySyncRef.current = time;
-      }
 
-      setEnemiesCount(state.enemies.length);
+        enemy.path = enemy.originalPath.map(p => ({
+          x: enemy.center.x + p.x * enemy.scale,
+          y: enemy.center.y + p.y * enemy.scale
+        }));
+
+        let hit = false;
+        if (dist < 100) {
+          for (let i = 0; i < enemy.path.length - 1; i++) {
+            if (circleIntersectsSegment(
+              { x: targetPlayer.x, y: targetPlayer.y },
+              targetPlayer.radius,
+              enemy.path[i],
+              enemy.path[i + 1]
+            )) {
+              hit = true;
+              break;
+            }
+          }
+        }
+
+        if (hit) {
+          targetPlayer.health -= 0.5;
+          if (targetPlayer.health <= 0) {
+            targetPlayer.health = 0;
+            targetPlayer.isAlive = false;
+          }
+          healthChanged = true;
+
+          // Any user can sync player health updates
+          if (cohortId) {
+            const { avatarImg, ...pData } = targetPlayer;
+            const cleanPlayerData: any = {};
+            Object.entries(pData).forEach(([key, value]) => {
+              if (value !== undefined) {
+                cleanPlayerData[key] = value;
+              }
+            });
+            update(ref(rtdb, `cohorts/${cohortId}/battle/players/${targetPlayer.id}`), cleanPlayerData);
+          }
+        }
+      }
+    });
+
+    // Only host syncs enemy positions to Firebase (to prevent conflicts)
+    if (cohortId && isHost && time - lastEnemySyncRef.current >= ENEMY_SYNC_INTERVAL) {
+      if (state.enemies.length === 0) {
+        set(ref(rtdb, `cohorts/${cohortId}/battle/enemies`), null).catch((err) =>
+          console.error('Failed to sync empty enemy state:', err)
+        );
+      } else {
+        const enemyPayload: Record<string, Enemy> = {};
+        state.enemies.forEach((enemy) => {
+          enemyPayload[enemy.id] = {
+            ...enemy,
+            path: enemy.path.map((p) => ({ ...p })),
+            originalPath: enemy.originalPath.map((p) => ({ ...p })),
+          };
+        });
+        set(ref(rtdb, `cohorts/${cohortId}/battle/enemies`), enemyPayload).catch((err) =>
+          console.error('Failed to sync enemies:', err)
+        );
+      }
+      lastEnemySyncRef.current = time;
     }
 
-    // 4. Collision: Projectiles vs Enemies (host authoritative)
-    if (isHost || !cohortId) {
+    setEnemiesCount(state.enemies.length);
+
+    // 4. Collision: Projectiles vs Enemies (all users process locally, anyone can remove enemies)
+    {
       for (let pIdx = state.projectiles.length - 1; pIdx >= 0; pIdx--) {
         const p = state.projectiles[pIdx];
         let projectileHit = false;
@@ -694,7 +709,8 @@ export default function WhiteboardBattle({
             const newCount = state.enemies.length;
             setEnemiesCount(newCount);
 
-            if (isHost && cohortId) {
+            // Any user can remove enemy from Firebase when hit
+            if (cohortId) {
               remove(ref(rtdb, `cohorts/${cohortId}/battle/enemies/${enemy.id}`)).catch((err) => {
                 console.error('Failed to remove enemy from RTDB:', err);
               });
@@ -721,10 +737,9 @@ export default function WhiteboardBattle({
       onHealthUpdate?.(healths);
     }
 
-    // Only host determines victory/defeat and syncs to RTDB
-    // Other clients listen to this state via RTDB listener
-    // Run this check every frame when host and initialized
-    if (isHost && gameInitialized && !gameOver && !gameWon) {
+    // Any user can determine victory/defeat and sync to RTDB
+    // This ensures the game ends properly regardless of who is host
+    if (gameInitialized && !gameOver && !gameWon) {
       const activePlayers = state.players.filter(p => p.isAlive);
       
       // Check defeat first

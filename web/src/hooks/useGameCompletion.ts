@@ -26,7 +26,7 @@ export function useGameCompletion({ gameType, gameName }: GameCompletionOptions)
   const completeGame = useCallback(async (score: number) => {
     if (!user || !firebaseUser) {
       // Not authenticated, just navigate to results
-      navigate('/results', { state: { score, game: gameName } });
+      navigate('/results', { state: { score, game: gameName, gameType } });
       return;
     }
 
@@ -78,7 +78,7 @@ export function useGameCompletion({ gameType, gameName }: GameCompletionOptions)
     }
 
     // Navigate to results
-    navigate('/results', { state: { score, game: gameName } });
+    navigate('/results', { state: { score, game: gameName, gameType } });
   }, [user, firebaseUser, gameType, gameName, navigate, showAchievements, showLevelUp, refreshUser]);
 
   return { completeGame };
