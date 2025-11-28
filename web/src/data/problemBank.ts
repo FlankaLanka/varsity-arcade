@@ -21,6 +21,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Algebra',
         hint: 'Try isolating x by first subtracting 5 from both sides.',
+        answer: 'x = 4',
       },
       {
         id: 'algebra-2',
@@ -28,6 +29,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Algebra',
         hint: 'Start by distributing the 3, or divide both sides by 3 first.',
+        answer: 'x = 9',
       },
       {
         id: 'algebra-3',
@@ -35,20 +37,47 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Algebra',
         hint: 'Subtract 7 from both sides first.',
+        answer: 'y = 20',
       },
       {
         id: 'algebra-4',
-        question: 'Solve the system: x + y = 10 and x - y = 4',
+        question: 'Solve for x: 5x - 3 = 22',
         category: 'Math',
         subcategory: 'Algebra',
-        hint: 'Try adding the two equations together.',
+        hint: 'Start by adding 3 to both sides.',
+        answer: 'x = 5',
       },
       {
         id: 'algebra-5',
-        question: 'Factor the expression: x² + 5x + 6',
+        question: 'Solve for x: 3x + 7 = 2x + 15',
         category: 'Math',
         subcategory: 'Algebra',
-        hint: 'Find two numbers that multiply to 6 and add to 5.',
+        hint: 'Get all x terms on one side and constants on the other.',
+        answer: 'x = 8',
+      },
+      {
+        id: 'algebra-6',
+        question: 'Solve for x: 4(x + 2) = 28',
+        category: 'Math',
+        subcategory: 'Algebra',
+        hint: 'You can distribute first or divide both sides by 4.',
+        answer: 'x = 5',
+      },
+      {
+        id: 'algebra-7',
+        question: 'Solve for x: 2x - 8 = x + 5',
+        category: 'Math',
+        subcategory: 'Algebra',
+        hint: 'Move all x terms to one side and constants to the other.',
+        answer: 'x = 13',
+      },
+      {
+        id: 'algebra-8',
+        question: 'Solve for x: x/3 + 4 = 9',
+        category: 'Math',
+        subcategory: 'Algebra',
+        hint: 'Subtract 4 from both sides first, then multiply by 3.',
+        answer: 'x = 15',
       },
     ],
     Calculus: [
@@ -58,6 +87,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Calculus',
         hint: 'Use the power rule: d/dx(xⁿ) = nxⁿ⁻¹',
+        answer: 'f\'(x) = 6x + 2',
       },
       {
         id: 'calc-2',
@@ -65,6 +95,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Calculus',
         hint: 'Use the reverse power rule: add 1 to the exponent and divide.',
+        answer: 'x⁴ + C',
       },
       {
         id: 'calc-3',
@@ -72,6 +103,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Calculus',
         hint: 'Try factoring the numerator.',
+        answer: '4',
       },
       {
         id: 'calc-4',
@@ -79,6 +111,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Calculus',
         hint: 'Use the chain rule with the derivative of sin.',
+        answer: 'f\'(x) = 2cos(2x)',
       },
     ],
     'Basic Arithmetic': [
@@ -88,6 +121,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Basic Arithmetic',
         hint: 'Try breaking it down: 347 + 300 - 11',
+        answer: '636',
       },
       {
         id: 'arith-2',
@@ -95,6 +129,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Basic Arithmetic',
         hint: 'Try 15 × 10 + 15 × 2',
+        answer: '180',
       },
       {
         id: 'arith-3',
@@ -102,6 +137,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Basic Arithmetic',
         hint: 'Think: what times 12 equals 144?',
+        answer: '12',
       },
       {
         id: 'arith-4',
@@ -109,6 +145,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Basic Arithmetic',
         hint: 'Try counting up from 347 to 1000.',
+        answer: '653',
       },
       {
         id: 'arith-5',
@@ -116,6 +153,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'Math',
         subcategory: 'Basic Arithmetic',
         hint: '25% is the same as 1/4.',
+        answer: '20',
       },
     ],
   },
@@ -127,6 +165,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'English',
         subcategory: 'Spelling',
         hint: 'It has a silent "p" in it.',
+        answer: 'receipt',
       },
       {
         id: 'spell-2',
@@ -134,6 +173,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'English',
         subcategory: 'Spelling',
         hint: 'One collar (c) and two socks (ss).',
+        answer: 'necessary',
       },
       {
         id: 'spell-3',
@@ -141,6 +181,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'English',
         subcategory: 'Spelling',
         hint: 'Double "c" and double "m".',
+        answer: 'accommodation',
       },
       {
         id: 'spell-4',
@@ -148,6 +189,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'English',
         subcategory: 'Spelling',
         hint: 'Think "to get her".',
+        answer: 'together',
       },
     ],
     Grammar: [
@@ -157,6 +199,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'English',
         subcategory: 'Grammar',
         hint: 'Which one is a contraction of "they are"?',
+        answer: 'They\'re',
       },
       {
         id: 'gram-2',
@@ -164,6 +207,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'English',
         subcategory: 'Grammar',
         hint: 'Use subject pronouns before the verb.',
+        answer: 'He and I went to school.',
       },
       {
         id: 'gram-3',
@@ -171,6 +215,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'English',
         subcategory: 'Grammar',
         hint: 'Use "fewer" for countable nouns.',
+        answer: 'fewer books',
       },
     ],
   },
@@ -182,6 +227,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'History',
         subcategory: 'US History',
         hint: 'It was during the American Revolution in the late 1700s.',
+        answer: '1776',
       },
       {
         id: 'ush-2',
@@ -189,6 +235,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'History',
         subcategory: 'US History',
         hint: 'He was also a general in the Revolutionary War.',
+        answer: 'George Washington',
       },
       {
         id: 'ush-3',
@@ -196,6 +243,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'History',
         subcategory: 'US History',
         hint: 'Think about the disagreement between Northern and Southern states.',
+        answer: 'Slavery',
       },
       {
         id: 'ush-4',
@@ -203,6 +251,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'History',
         subcategory: 'US History',
         hint: 'It was in the mid-1940s.',
+        answer: '1945',
       },
     ],
     'World History': [
@@ -212,6 +261,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'History',
         subcategory: 'World History',
         hint: 'They ruled along the Nile River.',
+        answer: 'Ancient Egyptians',
       },
       {
         id: 'wh-2',
@@ -219,6 +269,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'History',
         subcategory: 'World History',
         hint: 'He was the adopted son of Julius Caesar.',
+        answer: 'Augustus',
       },
       {
         id: 'wh-3',
@@ -226,6 +277,7 @@ const problemBank: Record<string, Record<string, CohortProblem[]>> = {
         category: 'History',
         subcategory: 'World History',
         hint: 'It started after an assassination in 1914.',
+        answer: '1914',
       },
     ],
   },

@@ -21,6 +21,7 @@ export interface CohortProblem {
   category: string;
   subcategory: string;
   hint?: string;
+  answer?: string; // The correct answer for verification
 }
 
 export interface CohortMember {

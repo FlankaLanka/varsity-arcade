@@ -51,6 +51,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
   
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
+  const [verificationSolved, setVerificationSolved] = useState<boolean | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursor>>({});
   const lastCursorPosition = useRef<{ x: number; y: number } | null>(null);
@@ -166,6 +167,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
         if (data.countdown !== undefined && data.countdown !== null) {
           setCountdown(data.countdown);
           setVerificationMessage('GET READY!');
+          setVerificationSolved(null); // Reset solved status during countdown
           
           // If countdown reaches 0, start battle (all clients will see this)
           if (data.countdown === 0 || data.countdown < 1) {
@@ -176,12 +178,14 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
               setIsVerifying(false);
               setCountdown(null);
               setVerificationMessage(null);
+              setVerificationSolved(null);
               onVerifySuccessRef.current(currentDrawings);
             }, 100);
           }
         } else {
           setCountdown(null);
           setVerificationMessage(data.message || 'Checking your work...');
+          setVerificationSolved(data.solved !== undefined ? data.solved : null);
         }
       } else {
         // Verification state cleared - reset everything
@@ -190,6 +194,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
         setVerifyingUserId(null);
         setVerifyingUsername(null);
         setVerificationMessage(null);
+        setVerificationSolved(null);
         setCountdown(null);
       }
     });
@@ -958,9 +963,10 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
         result = await verifySolution(currentProblem, messages, whiteboardImage);
       }
 
-      // Update with result message
+      // Update with result message and solved status
       await update(verificationRef, {
-        message: result.message
+        message: result.message,
+        solved: result.solved
       });
       
       // Notify parent of verification message (to display in chat)
@@ -974,20 +980,16 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
         setTimeout(async () => {
           await startCountdown();
         }, 2000);
-      } else {
-        // Not solved yet, clear after showing message
-        setTimeout(async () => {
-          await remove(verificationRef);
-        }, 3000);
       }
+      // If not solved, keep the message displayed until user acknowledges it
+      // (no auto-dismiss - user must click button)
     } catch (error) {
       console.error('Verification error:', error);
       await update(verificationRef, {
-        message: 'Error verifying solution. Please try again.'
+        message: 'Error verifying solution. Please try again.',
+        solved: false
       });
-      setTimeout(async () => {
-        await remove(verificationRef);
-      }, 2000);
+      // Don't auto-dismiss errors - user must acknowledge
     }
   };
 
@@ -1041,21 +1043,56 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
                   {verifyingUsername} is verifying...
                 </div>
               )}
-              {verificationMessage.toLowerCase().includes('great job') || verificationMessage.toLowerCase().includes('correct') ? (
+              {verificationSolved === true ? (
                 <>
                   <div className="text-6xl mb-4">🎉</div>
                   <div className="text-neon-green font-['Press_Start_2P'] text-xl mb-4">
                     SOLVED!
                   </div>
                 </>
+              ) : verificationSolved === false ? (
+                <>
+                  {verificationMessage && (
+                    verificationMessage.toLowerCase().includes('whiteboard') || 
+                    verificationMessage.toLowerCase().includes('show your work') ||
+                    verificationMessage.toLowerCase().includes('need to see') ||
+                    verificationMessage.toLowerCase().includes('insufficient')
+                  ) ? (
+                    <>
+                      <div className="text-6xl mb-4">📝</div>
+                      <div className="text-orange-400 font-['Press_Start_2P'] text-xl mb-4">
+                        NEEDS MORE WORK
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-6xl mb-4">❌</div>
+                      <div className="text-red-500 font-['Press_Start_2P'] text-xl mb-4">
+                        INCORRECT
+                      </div>
+                    </>
+                  )}
+                </>
               ) : (
                 <div className="text-neon-cyan font-['Press_Start_2P'] text-lg mb-4 animate-pulse">
                   {verifyingUserId === currentUser?.id ? 'CHECKING...' : 'AI IS VERIFYING...'}
                 </div>
               )}
-              <p className="text-white text-lg leading-relaxed">
+              <p className="text-white text-lg leading-relaxed mb-6">
                 {verificationMessage}
               </p>
+              {(verificationSolved === false || (verificationMessage && verificationMessage.includes('Error'))) && (
+                <button
+                  onClick={async () => {
+                    if (!cohortId) return;
+                    const verificationRef = ref(rtdb, `cohorts/${cohortId}/verification`);
+                    await remove(verificationRef);
+                  }}
+                  className="px-6 py-3 bg-neon-cyan hover:bg-neon-cyan/80 text-black font-bold rounded font-['Press_Start_2P'] transition-all text-sm"
+                >
+                  ACKNOWLEDGE
+                </button>
+              )}
             </div>
           ) : (
             // Default loading state

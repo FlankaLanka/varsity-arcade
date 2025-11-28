@@ -99,6 +99,8 @@ export default function WhiteboardBattle({
 
   // Prevent duplicate victory announcements
   const victoryAnnouncedRef = useRef(false);
+  const gameOverRef = useRef(false);
+  const gameWonRef = useRef(false);
 
   // Preload avatars
   useEffect(() => {
@@ -162,13 +164,29 @@ export default function WhiteboardBattle({
       const data = snapshot.val();
       if (data) {
         enemySnapshotReadyRef.current = true;
-        const loadedEnemies = Object.values(data) as Enemy[];
-        gameStateRef.current.enemies = loadedEnemies.map((enemy) => ({
-          ...enemy,
-          path: enemy.path ?? [],
-          originalPath: enemy.originalPath ?? [],
-        }));
-        setEnemiesCount(loadedEnemies.length);
+        const remoteEnemies = Object.values(data) as Enemy[];
+        const remoteIds = new Set(remoteEnemies.map(e => e.id));
+        const localEnemies = gameStateRef.current.enemies;
+        
+        // Smart merge: Remove enemies that no longer exist in Firebase (killed by others)
+        const survivingLocal = localEnemies.filter(e => remoteIds.has(e.id));
+        
+        // Add new enemies from Firebase (ones we don't have locally)
+        remoteEnemies.forEach(remoteEnemy => {
+          const existsLocally = survivingLocal.find(e => e.id === remoteEnemy.id);
+          if (!existsLocally) {
+            // New enemy from Firebase - add it with full data
+            survivingLocal.push({
+              ...remoteEnemy,
+              path: remoteEnemy.path ?? [],
+              originalPath: remoteEnemy.originalPath ?? [],
+            });
+          }
+          // If it exists locally, keep local position for smooth movement
+        });
+        
+        gameStateRef.current.enemies = survivingLocal;
+        setEnemiesCount(survivingLocal.length);
       } else if (enemySnapshotReadyRef.current) {
         gameStateRef.current.enemies = [];
         setEnemiesCount(0);
@@ -181,12 +199,14 @@ export default function WhiteboardBattle({
       const battleGameState = snapshot.val();
       if (!battleGameState) return;
       if (battleGameState.gameOver !== undefined) {
+        gameOverRef.current = battleGameState.gameOver;
         setGameOver(battleGameState.gameOver);
         if (battleGameState.gameOver) {
           victoryAnnouncedRef.current = true;
         }
       }
       if (battleGameState.gameWon !== undefined) {
+        gameWonRef.current = battleGameState.gameWon;
         setGameWon(battleGameState.gameWon);
         if (battleGameState.gameWon) {
           victoryAnnouncedRef.current = true;
@@ -248,6 +268,7 @@ export default function WhiteboardBattle({
     if (enemiesCount > 0 || victoryAnnouncedRef.current) return;
 
     victoryAnnouncedRef.current = true;
+    gameWonRef.current = true;
     setGameWon(true);
     set(ref(rtdb, `cohorts/${cohortId}/battle/gameState`), {
       gameOver: false,
@@ -298,6 +319,8 @@ export default function WhiteboardBattle({
 
       gameStateRef.current.players = initialPlayers;
       victoryAnnouncedRef.current = false;
+      gameOverRef.current = false;
+      gameWonRef.current = false;
       enemySnapshotReadyRef.current = false;
       
       // Initialize camera to center on current player
@@ -739,11 +762,12 @@ export default function WhiteboardBattle({
 
     // Any user can determine victory/defeat and sync to RTDB
     // This ensures the game ends properly regardless of who is host
-    if (gameInitialized && !gameOver && !gameWon) {
+    if (gameInitialized && !gameOverRef.current && !gameWonRef.current) {
       const activePlayers = state.players.filter(p => p.isAlive);
       
       // Check defeat first
       if (activePlayers.length === 0) {
+        gameOverRef.current = true;
         setGameOver(true);
         // Sync to RTDB
         if (cohortId) {
@@ -752,7 +776,7 @@ export default function WhiteboardBattle({
             gameWon: false
           }).catch(() => {});
         }
-        return; // Stop game loop
+        // Continue to render this frame, then loop will stop naturally
       }
       
       // Check victory - use state.enemies.length directly and ensure it's accurate
@@ -760,8 +784,9 @@ export default function WhiteboardBattle({
       const currentEnemyCount = state.enemies.length;
       setEnemiesCount(currentEnemyCount); // Keep UI in sync with actual enemy count
       
-      if (currentEnemyCount === 0 && !victoryAnnouncedRef.current) {
+      if (currentEnemyCount === 0 && !victoryAnnouncedRef.current && activePlayers.length > 0) {
         victoryAnnouncedRef.current = true;
+        gameWonRef.current = true;
         setGameWon(true);
         // Sync to RTDB
         if (cohortId) {
@@ -770,7 +795,7 @@ export default function WhiteboardBattle({
             gameWon: true
           }).catch(() => {});
         }
-        return; // Stop game loop
+        // Continue to render this frame, then loop will stop naturally
       }
     }
 
@@ -886,7 +911,7 @@ export default function WhiteboardBattle({
     // Restore camera transform
     ctx.restore();
 
-    if (!gameOver && !gameWon) {
+    if (!gameOverRef.current && !gameWonRef.current) {
       requestRef.current = requestAnimationFrame(gameLoop);
     }
   };

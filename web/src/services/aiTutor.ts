@@ -263,10 +263,11 @@ export async function verifySolution(
 
   try {
     // Build the verification prompt
+    const correctAnswer = problem.answer ? `\n\nCORRECT ANSWER (FOR YOUR REFERENCE ONLY - NEVER REVEAL THIS): "${problem.answer}"` : '';
     const verificationPrompt = `You are an AI tutor verifying if students have correctly solved a problem and demonstrated understanding.
 
 PROBLEM: "${problem.question}"
-Category: ${problem.category} - ${problem.subcategory}
+Category: ${problem.category} - ${problem.subcategory}${correctAnswer}
 
 Your task:
 1. Analyze the chat conversation to see if students have:
@@ -276,6 +277,8 @@ Your task:
 
 2. If the chat doesn't show enough work to verify (e.g., they just stated an answer without showing steps), you should request to see their whiteboard work.
 
+${problem.answer ? `CRITICAL: The correct answer is "${problem.answer}" (FOR YOUR REFERENCE ONLY). You MUST compare the student's answer against this exact answer. If their answer does not match (even slightly), set solved to false. NEVER mention this answer in your message to students.` : ''}
+
 IMPORTANT: You must respond in EXACTLY this JSON format (no markdown, no code blocks):
 {
   "solved": true/false,
@@ -284,11 +287,17 @@ IMPORTANT: You must respond in EXACTLY this JSON format (no markdown, no code bl
 }
 
 Rules:
-- "solved" should be true ONLY if the answer is correct AND they've shown understanding
+- "solved" should be true ONLY if the student's answer MATCHES the correct answer AND they've shown understanding
+- Be STRICT: If the answer is wrong, even slightly, set solved to false
+- ${problem.answer ? `Compare the student's answer to "${problem.answer}" - they must match exactly or be equivalent` : 'Verify the answer is correct mathematically'}
 - "needsWhiteboard" should be true if you need to see their work on the whiteboard to verify
 - If solved is true, the message MUST start with "Great job!" and congratulate them
 - If needsWhiteboard is true, politely ask to see their work on the whiteboard
-- If solved is false and you've seen their work, provide encouraging guidance`;
+- If solved is false and you've seen their work, provide encouraging guidance WITHOUT revealing the answer
+- CRITICAL: NEVER reveal the correct answer in your message. NEVER say "the answer is X" or "the correct answer is Y". Only provide hints, guidance, and encouragement. Guide them to find the answer themselves through questions and suggestions.
+- Examples of GOOD guidance: "Try checking your arithmetic", "What happens if you subtract 5 from both sides?", "Double-check your final step"
+- Examples of BAD guidance (NEVER DO THIS): "The answer should be 4", "You should get x = 4", "The correct answer is 4" ❌
+- IMPORTANT: When in doubt, set solved to false. Only mark as solved if you are CERTAIN the answer matches the correct answer`;
 
     const messagesToSend: any[] = [
       { role: 'system', content: verificationPrompt }
@@ -376,12 +385,28 @@ Rules:
         needsWhiteboard: Boolean(result.needsWhiteboard)
       };
     } catch (parseError) {
-      // If JSON parsing fails, try to extract intent from the response
-      const isSolved = aiContent.toLowerCase().includes('great job') || 
-                       aiContent.toLowerCase().includes('correct') ||
-                       aiContent.toLowerCase().includes('solved');
-      const needsWhiteboard = aiContent.toLowerCase().includes('whiteboard') ||
-                              aiContent.toLowerCase().includes('show your work');
+      // If JSON parsing fails, be conservative - default to false
+      // Only mark as solved if message explicitly starts with "Great job!" and contains positive confirmation
+      const lowerContent = aiContent.toLowerCase();
+      const hasPositiveStart = lowerContent.startsWith('great job') || 
+                              lowerContent.startsWith('excellent') ||
+                              lowerContent.startsWith('perfect');
+      const hasNegativeIndicators = lowerContent.includes('incorrect') ||
+                                    lowerContent.includes('wrong') ||
+                                    lowerContent.includes('not quite') ||
+                                    lowerContent.includes('try again') ||
+                                    lowerContent.includes('not correct') ||
+                                    lowerContent.includes('needs work') ||
+                                    lowerContent.includes('almost') ||
+                                    lowerContent.includes('close but');
+      
+      // If we have the correct answer, be extra strict - require explicit confirmation
+      // The fallback parsing is less reliable, so we default to false when we have an answer to check
+      // Only mark as solved if message explicitly confirms the answer is correct
+      const isSolved = hasPositiveStart && !hasNegativeIndicators && (!problem.answer || lowerContent.includes('correct'));
+      const needsWhiteboard = lowerContent.includes('whiteboard') ||
+                              lowerContent.includes('show your work') ||
+                              lowerContent.includes('need to see');
       
       return {
         solved: isSolved && !needsWhiteboard,

@@ -24,16 +24,41 @@ interface Chemical {
   x: number;
   y: number;
   type: 'acidic' | 'basic';
-  pHShift: number;
   vx: number;
   vy: number;
   dead: boolean;
   compound: string;
+  strength: number;
+}
+
+interface FloatingText {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  life: number;
+  maxLife: number;
+}
+
+interface Environment {
+  type: 'acidic' | 'basic' | null;
+  timer: number;
+  duration: number;
 }
 
 const CHEMICAL_COMPOUNDS = {
-  acidic: ['HCl', 'H2SO4', 'HNO3', 'HF'],
-  basic: ['NaOH', 'KOH', 'NH3', 'Ca(OH)2'],
+  acidic: [
+    { name: 'HCl', strength: 3 },    // Strong
+    { name: 'H2SO4', strength: 3 },  // Strong
+    { name: 'HNO3', strength: 3 },   // Strong
+    { name: 'HF', strength: 2 },     // Medium
+  ],
+  basic: [
+    { name: 'NaOH', strength: 3 },   // Strong
+    { name: 'KOH', strength: 3 },    // Strong
+    { name: 'NH3', strength: 1 },    // Weak
+    { name: 'Ca(OH)2', strength: 2 }, // Medium
+  ],
 };
 
 const ENEMY_ROWS = 4;
@@ -49,14 +74,15 @@ export const PHInvadersGame = () => {
   const [gameOver, setGameOver] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(60);
-  const [pH, setPH] = useState(7.0);
   
   const gameStateRef = useRef<{
     player: { x: number; y: number; width: number; height: number; lastShot: number };
     enemies: Enemy[];
     bullets: Bullet[];
     chemicals: Chemical[];
-    pH: number;
+    floatingTexts: FloatingText[];
+    environment: Environment;
+    environmentTimer: number;
     score: number;
     lives: number;
     timeRemaining: number;
@@ -65,7 +91,6 @@ export const PHInvadersGame = () => {
     enemyDirection: number;
     enemyMoveTimer: number;
     enemyShootTimer: number;
-    lastPHScoreTime: number;
   } | null>(null);
   
   const animationIdRef = useRef<number | null>(null);
@@ -90,12 +115,18 @@ export const PHInvadersGame = () => {
       }
     }
 
+    // Trigger initial environment
+    const initialType = Math.random() > 0.5 ? 'acidic' : 'basic';
+    const initialDuration = 180 + Math.random() * 120;
+    
     gameStateRef.current = {
       player: { x: 350, y: 360, width: 35, height: 18, lastShot: 0 },
       enemies,
       bullets: [],
       chemicals: [],
-      pH: 7.0,
+      floatingTexts: [],
+      environment: { type: initialType, timer: initialDuration, duration: initialDuration },
+      environmentTimer: 0,
       score: 0,
       lives: 3,
       timeRemaining: 60,
@@ -104,14 +135,12 @@ export const PHInvadersGame = () => {
       enemyDirection: 1,
       enemyMoveTimer: 0,
       enemyShootTimer: 0,
-      lastPHScoreTime: 60,
     };
     
     setScore(0);
     setLives(3);
     setGameOver(false);
     setTimeRemaining(60);
-    setPH(7.0);
     setGameStarted(true);
   }, []);
 
@@ -165,34 +194,49 @@ export const PHInvadersGame = () => {
     window.addEventListener('keyup', handleKeyUp);
 
     const spawnChemical = (x: number, y: number) => {
-      if (Math.random() > 0.5) return;
+      // Always spawn 2 compounds: 1 acid and 1 base, in random order
+      const types: ('acidic' | 'basic')[] = ['acidic', 'basic'];
+      // Randomize order
+      if (Math.random() > 0.5) types.reverse();
       
-      const type = Math.random() > 0.5 ? 'acidic' : 'basic';
-      const compounds = CHEMICAL_COMPOUNDS[type];
-      
-      gameState.chemicals.push({
-        x,
-        y,
-        type,
-        pHShift: 0.5 + Math.random() * 1.5,
-        vx: (Math.random() - 0.5) * 0.5,
-        vy: 1.5,
-        dead: false,
-        compound: compounds[Math.floor(Math.random() * compounds.length)],
+      types.forEach((type, index) => {
+        const compounds = CHEMICAL_COMPOUNDS[type];
+        const compoundData = compounds[Math.floor(Math.random() * compounds.length)];
+        const offsetX = (index - 0.5) * 25; // Less spread horizontally
+        const direction = index === 0 ? -1 : 1; // First goes left, second goes right
+        
+        gameState.chemicals.push({
+          x: x + offsetX,
+          y,
+          type,
+          vx: direction * (0.8 + Math.random() * 0.4), // Less divergence
+          vy: 1.0, // Slower movement
+          dead: false,
+          compound: compoundData.name,
+          strength: compoundData.strength,
+        });
       });
     };
 
-    const getPHColor = (pH: number): string => {
-      if (pH <= 3) return '#ff0000';
-      if (pH <= 6) return '#ff8800';
-      if (pH <= 8) return '#00ff00';
-      if (pH <= 11) return '#88ccff';
-      return '#0000ff';
+    const triggerEnvironment = () => {
+      const type = Math.random() > 0.5 ? 'acidic' : 'basic';
+      const duration = 180 + Math.random() * 120; // 3-5 seconds in frames (60fps)
+      gameState.environment = {
+        type,
+        timer: duration,
+        duration,
+      };
     };
 
-    const calculatePHScore = (pH: number): number => {
-      const dist = Math.abs(pH - 7);
-      return Math.floor(Math.max(10, 100 - dist * 10));
+    const addFloatingText = (x: number, y: number, text: string, color: string) => {
+      gameState.floatingTexts.push({
+        x,
+        y,
+        text,
+        color,
+        life: 60, // frames
+        maxLife: 60,
+      });
     };
 
     let lastTime = performance.now();
@@ -240,12 +284,17 @@ export const PHInvadersGame = () => {
       }
       setTimeRemaining(Math.ceil(gameState.timeRemaining));
 
-      // pH scoring
-      const currentSec = Math.floor(gameState.timeRemaining);
-      if (currentSec !== gameState.lastPHScoreTime) {
-        gameState.score += calculatePHScore(gameState.pH);
-        setScore(gameState.score);
-        gameState.lastPHScoreTime = currentSec;
+      // Environment system - ensure there's always an active environment
+      if (gameState.environment.type) {
+        // Update current environment timer
+        gameState.environment.timer -= dt;
+        if (gameState.environment.timer <= 0) {
+          // Immediately trigger next environment when current ends
+          triggerEnvironment();
+        }
+      } else {
+        // If somehow no environment, trigger one immediately
+        triggerEnvironment();
       }
 
       // Enemy movement
@@ -330,14 +379,44 @@ export const PHInvadersGame = () => {
         const dy = c.y - (player.y + player.height / 2);
         if (Math.sqrt(dx * dx + dy * dy) < 18) {
           c.dead = true;
-          if (c.type === 'acidic') {
-            gameState.pH = Math.max(0, gameState.pH - c.pHShift);
+          
+          // Score based on environment and compound strength
+          const env = gameState.environment.type;
+          let points = 0;
+          
+          // Base points: strength 1 = 30, strength 2 = 50, strength 3 = 75
+          const basePoints = c.strength === 1 ? 30 : c.strength === 2 ? 50 : 75;
+          const penaltyPoints = c.strength === 1 ? -15 : c.strength === 2 ? -25 : -35;
+          
+          if (env === 'acidic') {
+            // In acidic environment: collect acids = +points, collect bases = -points
+            points = c.type === 'acidic' ? basePoints : penaltyPoints;
+          } else if (env === 'basic') {
+            // In basic environment: collect bases = +points, collect acids = -points
+            points = c.type === 'basic' ? basePoints : penaltyPoints;
           } else {
-            gameState.pH = Math.min(14, gameState.pH + c.pHShift);
+            // No active environment: no points
+            points = 0;
           }
-          setPH(gameState.pH);
+          
+          gameState.score += points;
+          setScore(gameState.score);
+          
+          // Add floating text feedback
+          if (points !== 0) {
+            const text = points > 0 ? `+${points}` : `${points}`;
+            const color = points > 0 ? '#00ff00' : '#ff0000';
+            addFloatingText(c.x, c.y, text, color);
+          }
         }
       });
+
+      // Update floating texts
+      gameState.floatingTexts.forEach(ft => {
+        ft.y -= 1 * dt;
+        ft.life -= dt;
+      });
+      gameState.floatingTexts = gameState.floatingTexts.filter(ft => ft.life > 0);
 
       // Cleanup
       gameState.bullets = gameState.bullets.filter(b => !b.dead);
@@ -346,9 +425,22 @@ export const PHInvadersGame = () => {
       // Win check
       if (gameState.enemies.filter(e => e.alive).length === 0) endGame();
 
-      // Draw
+      // Draw background with environment fade
       ctx.fillStyle = '#050510';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Environment background fade
+      if (gameState.environment.type) {
+        const progress = 1 - (gameState.environment.timer / gameState.environment.duration);
+        const alpha = 0.3 * (0.5 + 0.5 * Math.sin(progress * Math.PI * 4)); // Pulsing effect
+        
+        if (gameState.environment.type === 'acidic') {
+          ctx.fillStyle = `rgba(255, 0, 0, ${alpha})`;
+        } else {
+          ctx.fillStyle = `rgba(0, 100, 255, ${alpha})`;
+        }
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
 
       // Enemies
       gameState.enemies.forEach(e => {
@@ -369,18 +461,28 @@ export const PHInvadersGame = () => {
         ctx.fill();
       });
 
-      // Chemicals
+      // Chemicals (all pH paper color - no visual distinction)
       gameState.chemicals.forEach(c => {
         if (c.dead) return;
-        ctx.fillStyle = '#ffffff';
+        // Draw circle in pH paper color (yellow/orange neutral)
+        ctx.fillStyle = '#f4a460'; // Sandy brown / pH paper color
         ctx.beginPath();
-        ctx.arc(c.x, c.y, 12, 0, Math.PI * 2);
+        ctx.arc(c.x, c.y, 14, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = '#000';
-        ctx.font = 'bold 8px "Press Start 2P"';
+        // Draw border for contrast
+        ctx.strokeStyle = '#8b7355';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Draw text with better contrast
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 10px "Press Start 2P"';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
+        // Add text shadow for readability
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 2;
         ctx.fillText(c.compound, c.x, c.y);
+        ctx.shadowBlur = 0;
       });
 
       // Player
@@ -392,14 +494,26 @@ export const PHInvadersGame = () => {
       ctx.closePath();
       ctx.fill();
 
-      // pH bar
-      ctx.fillStyle = '#222';
-      ctx.fillRect(10, canvas.height - 20, 120, 12);
-      ctx.fillStyle = getPHColor(gameState.pH);
-      ctx.fillRect(10, canvas.height - 20, (gameState.pH / 14) * 120, 12);
-      ctx.fillStyle = '#fff';
-      ctx.font = '8px "Press Start 2P"';
-      ctx.fillText(`pH: ${gameState.pH.toFixed(1)}`, 15, canvas.height - 11);
+      // Environment indicator
+      if (gameState.environment.type) {
+        ctx.fillStyle = gameState.environment.type === 'acidic' ? '#ff0000' : '#0064ff';
+        ctx.font = 'bold 10px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText(
+          gameState.environment.type === 'acidic' ? 'ACIDIC ENVIRONMENT' : 'BASIC ENVIRONMENT',
+          canvas.width / 2,
+          20
+        );
+      }
+
+      // Floating score texts
+      gameState.floatingTexts.forEach(ft => {
+        const alpha = ft.life / ft.maxLife;
+        ctx.fillStyle = ft.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+        ctx.font = 'bold 14px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText(ft.text, ft.x, ft.y);
+      });
 
       animationIdRef.current = requestAnimationFrame(loop);
     };
@@ -435,9 +549,10 @@ export const PHInvadersGame = () => {
             </h3>
             <ul className="text-[10px] text-gray-300 space-y-2">
               <li>▸ Move: <span className="text-neon-green">A / D</span> | Shoot: <span className="text-neon-green">SPACE</span></li>
-              <li>▸ Aliens drop <span className="text-neon-cyan">chemical compounds</span></li>
-              <li>▸ <span className="text-red-400">Acids</span> lower pH, <span className="text-blue-400">bases</span> raise pH</li>
-              <li>▸ Keep pH at <span className="text-neon-yellow">7</span> for max points!</li>
+              <li>▸ Aliens drop <span className="text-neon-cyan">2 compounds</span> (1 acid, 1 base)</li>
+              <li>▸ <span className="text-red-400">Red background</span> = Acidic environment</li>
+              <li>▸ <span className="text-blue-400">Blue background</span> = Basic environment</li>
+              <li>▸ Collect <span className="text-red-400">acids</span> in acidic, <span className="text-blue-400">bases</span> in basic!</li>
             </ul>
           </div>
 
@@ -462,8 +577,7 @@ export const PHInvadersGame = () => {
             <h2 className="text-3xl text-neon-pink font-['Press_Start_2P'] mb-4 animate-pulse">
                 {victory ? 'VICTORY!' : 'GAME OVER'}
               </h2>
-            <div className="text-xl text-white font-['Press_Start_2P'] mb-2">SCORE: {score}</div>
-            <div className="text-sm text-neon-cyan font-['Press_Start_2P'] mb-6">pH: {pH.toFixed(1)}</div>
+            <div className="text-xl text-white font-['Press_Start_2P'] mb-6">SCORE: {score}</div>
               
               <div className="flex gap-4">
               <button onClick={startGame} className="retro-btn bg-neon-cyan text-black border-neon-cyan hover:bg-white text-xs">
