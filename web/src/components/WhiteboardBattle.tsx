@@ -101,6 +101,7 @@ export default function WhiteboardBattle({
   const victoryAnnouncedRef = useRef(false);
   const gameOverRef = useRef(false);
   const gameWonRef = useRef(false);
+  const gameInitializedRef = useRef(false);
 
   // Preload avatars
   useEffect(() => {
@@ -117,6 +118,7 @@ export default function WhiteboardBattle({
     if (!cohortId) {
       setIsHost(true);
       enemySnapshotReadyRef.current = true;
+      gameInitializedRef.current = true;
       setGameInitialized(true);
       return;
     }
@@ -191,6 +193,7 @@ export default function WhiteboardBattle({
         gameStateRef.current.enemies = [];
         setEnemiesCount(0);
       }
+      gameInitializedRef.current = true;
       setGameInitialized(true);
     });
 
@@ -389,7 +392,15 @@ export default function WhiteboardBattle({
 
       setGameOver(false);
       setGameWon(false);
-      setGameInitialized(false);
+      // Only set to false if we have a cohortId - Firebase listener will set it back to true
+      // For single-player (no cohortId), keep it true since there's no Firebase to wait for
+      if (cohortId) {
+        gameInitializedRef.current = false;
+        setGameInitialized(false);
+      } else {
+        gameInitializedRef.current = true;
+        setGameInitialized(true);
+      }
       
       // Reset game state in RTDB when game restarts
       if (cohortId) {
@@ -762,7 +773,8 @@ export default function WhiteboardBattle({
 
     // Any user can determine victory/defeat and sync to RTDB
     // This ensures the game ends properly regardless of who is host
-    if (gameInitialized && !gameOverRef.current && !gameWonRef.current) {
+    // Use gameInitializedRef to avoid stale closure issues in the game loop
+    if (gameInitializedRef.current && !gameOverRef.current && !gameWonRef.current) {
       const activePlayers = state.players.filter(p => p.isAlive);
       
       // Check defeat first
