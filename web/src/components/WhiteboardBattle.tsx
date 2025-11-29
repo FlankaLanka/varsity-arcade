@@ -392,15 +392,6 @@ export default function WhiteboardBattle({
 
       setGameOver(false);
       setGameWon(false);
-      // Only set to false if we have a cohortId - Firebase listener will set it back to true
-      // For single-player (no cohortId), keep it true since there's no Firebase to wait for
-      if (cohortId) {
-        gameInitializedRef.current = false;
-        setGameInitialized(false);
-      } else {
-        gameInitializedRef.current = true;
-        setGameInitialized(true);
-      }
       
       // Reset game state in RTDB when game restarts
       if (cohortId) {
@@ -415,6 +406,11 @@ export default function WhiteboardBattle({
       
       // Clear local projectile state
       gameStateRef.current.projectiles = [];
+
+      // Mark as initialized - this allows defeat/victory detection in the game loop
+      // Must be set BEFORE starting the loop to handle immediate player death
+      gameInitializedRef.current = true;
+      setGameInitialized(true);
 
       // Start Loop
       requestRef.current = requestAnimationFrame(gameLoop);
