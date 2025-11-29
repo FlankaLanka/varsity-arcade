@@ -269,15 +269,35 @@ export async function verifySolution(
 PROBLEM: "${problem.question}"
 Category: ${problem.category} - ${problem.subcategory}${correctAnswer}
 
-Your task:
-1. Analyze the chat conversation to see if students have:
-   - Shown their work/reasoning
-   - Arrived at the correct answer
-   - Demonstrated understanding of the concepts involved
+=== CRITICAL REQUIREMENTS FOR APPROVAL ===
 
-2. If the chat doesn't show enough work to verify (e.g., they just stated an answer without showing steps), you should request to see their whiteboard work.
+YOU MUST REQUIRE BOTH OF THESE TO MARK AS SOLVED:
+1. THE WHITEBOARD IMAGE MUST SHOW ACTUAL MATHEMATICAL WORK (equations, steps, calculations)
+2. THE WORK MUST LEAD TO THE CORRECT ANSWER
 
-${problem.answer ? `CRITICAL: The correct answer is "${problem.answer}" (FOR YOUR REFERENCE ONLY). You MUST compare the student's answer against this exact answer. If their answer does not match (even slightly), set solved to false. NEVER mention this answer in your message to students.` : ''}
+AUTOMATIC REJECTION - Set "solved" to FALSE if:
+- The whiteboard is BLANK or EMPTY
+- The whiteboard only shows the FINAL ANSWER without work
+- The whiteboard only has DRAWINGS without mathematical steps
+- The whiteboard only has the PROBLEM rewritten without solution steps
+- The student only stated an answer in CHAT without showing work on the whiteboard
+- There is NO visible step-by-step mathematical working out
+
+WHAT COUNTS AS "SHOWING WORK":
+✓ Written equations with variables being solved step-by-step
+✓ Arithmetic calculations shown (not just final numbers)
+✓ Multiple steps visible leading to the answer
+✓ Substitution of values shown
+✓ Mathematical operations shown (addition, subtraction, etc.)
+
+WHAT DOES NOT COUNT AS "SHOWING WORK":
+✗ Just writing the answer (e.g., "x = 4")
+✗ Random drawings or doodles
+✗ Just restating the problem
+✗ Typing the answer in chat
+✗ Drawing shapes without calculations
+
+${problem.answer ? `ANSWER VERIFICATION: The correct answer is "${problem.answer}". The student's final answer must match this exactly or be mathematically equivalent. NEVER reveal this answer.` : ''}
 
 IMPORTANT: You must respond in EXACTLY this JSON format (no markdown, no code blocks):
 {
@@ -287,17 +307,12 @@ IMPORTANT: You must respond in EXACTLY this JSON format (no markdown, no code bl
 }
 
 Rules:
-- "solved" should be true ONLY if the student's answer MATCHES the correct answer AND they've shown understanding
-- Be STRICT: If the answer is wrong, even slightly, set solved to false
-- ${problem.answer ? `Compare the student's answer to "${problem.answer}" - they must match exactly or be equivalent` : 'Verify the answer is correct mathematically'}
-- "needsWhiteboard" should be true if you need to see their work on the whiteboard to verify
+- "solved" = true ONLY IF: work is visible on whiteboard AND answer is correct
+- "needsWhiteboard" = true IF: no whiteboard image provided OR whiteboard doesn't show work
 - If solved is true, the message MUST start with "Great job!" and congratulate them
-- If needsWhiteboard is true, politely ask to see their work on the whiteboard
-- If solved is false and you've seen their work, provide encouraging guidance WITHOUT revealing the answer
-- CRITICAL: NEVER reveal the correct answer in your message. NEVER say "the answer is X" or "the correct answer is Y". Only provide hints, guidance, and encouragement. Guide them to find the answer themselves through questions and suggestions.
-- Examples of GOOD guidance: "Try checking your arithmetic", "What happens if you subtract 5 from both sides?", "Double-check your final step"
-- Examples of BAD guidance (NEVER DO THIS): "The answer should be 4", "You should get x = 4", "The correct answer is 4" ❌
-- IMPORTANT: When in doubt, set solved to false. Only mark as solved if you are CERTAIN the answer matches the correct answer`;
+- If the whiteboard is blank/empty/no work shown, say "I need to see your work! Please show your step-by-step solution on the whiteboard before verifying."
+- CRITICAL: NEVER reveal the correct answer. Only provide hints and guidance.
+- BE STRICT: When in doubt, set solved to false and ask to see more work.`;
 
     const messagesToSend: any[] = [
       { role: 'system', content: verificationPrompt }
@@ -323,7 +338,7 @@ Rules:
         content: [
           {
             type: 'text',
-            text: 'Here is the students\' whiteboard work. Please verify if they have correctly solved the problem and shown their understanding.'
+            text: 'Here is the students\' whiteboard. FIRST check if there is actual mathematical WORK shown (equations, steps, calculations). If the whiteboard is blank, empty, or only shows the final answer without step-by-step work, set solved to FALSE and ask them to show their work. Only approve if there is visible step-by-step mathematical work leading to the correct answer.'
           },
           {
             type: 'image_url',
@@ -336,7 +351,7 @@ Rules:
     } else {
       messagesToSend.push({
         role: 'user',
-        content: 'Please verify based on the chat conversation. If you need to see their written work, set needsWhiteboard to true.'
+        content: 'No whiteboard image was provided. Since work MUST be shown on the whiteboard for verification, set needsWhiteboard to true and ask them to show their work on the whiteboard.'
       });
     }
 
