@@ -193,8 +193,8 @@ export default function WhiteboardBattle({
         gameStateRef.current.enemies = [];
         setEnemiesCount(0);
       }
-      gameInitializedRef.current = true;
-      setGameInitialized(true);
+      // Note: Don't set gameInitialized here - it's set in the initialization effect
+      // after players are properly set up. Setting it here causes brief defeat screen.
     });
 
     const battleGameStateRef = ref(rtdb, `cohorts/${cohortId}/battle/gameState`);
@@ -773,8 +773,9 @@ export default function WhiteboardBattle({
     if (gameInitializedRef.current && !gameOverRef.current && !gameWonRef.current) {
       const activePlayers = state.players.filter(p => p.isAlive);
       
-      // Check defeat first
-      if (activePlayers.length === 0) {
+      // Check defeat first - but only if players have been initialized (length > 0)
+      // This prevents false defeat when players array is empty during initialization
+      if (state.players.length > 0 && activePlayers.length === 0) {
         gameOverRef.current = true;
         setGameOver(true);
         // Sync to RTDB

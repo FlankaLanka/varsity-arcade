@@ -25,6 +25,7 @@ export default function CohortMemberAvatars({ members, mode, memberHealths, spea
     <div className="flex-1 overflow-y-auto p-3 space-y-3">
       {sortedMembers.map(member => {
         const isTeacher = member.accountType === 'teacher';
+        const isSpeaking = speakingMembers.has(member.userId);
         
         return (
           <div 
@@ -35,24 +36,54 @@ export default function CohortMemberAvatars({ members, mode, memberHealths, spea
                 : 'hover:bg-gray-800'
             }`}
           >
-            {/* Avatar */}
+            {/* Avatar with speaking ring */}
             <div className="relative">
+              {/* Animated speaking ring - outer pulse */}
+              {isSpeaking && (
+                <>
+                  <div 
+                    className="absolute -inset-1 rounded-full animate-ping opacity-75"
+                    style={{
+                      background: isTeacher 
+                        ? 'rgba(250, 204, 21, 0.4)' 
+                        : 'rgba(41, 255, 100, 0.4)',
+                      animationDuration: '1.5s'
+                    }}
+                  />
+                  <div 
+                    className="absolute -inset-0.5 rounded-full animate-pulse"
+                    style={{
+                      background: `linear-gradient(135deg, ${
+                        isTeacher 
+                          ? 'rgba(250, 204, 21, 0.6), rgba(250, 204, 21, 0.2)' 
+                          : 'rgba(41, 255, 100, 0.6), rgba(41, 255, 100, 0.2)'
+                      })`,
+                      animationDuration: '1s'
+                    }}
+                  />
+                </>
+              )}
+              
               {member.avatar ? (
                 <img 
                   src={member.avatar} 
                   alt={member.username} 
-                  className={`w-8 h-8 rounded-full bg-gray-700 object-cover border-2 transition-all ${
-                    speakingMembers.has(member.userId)
-                      ? 'border-neon-green shadow-[0_0_8px_rgba(41,255,100,0.6)]'
+                  className={`relative w-8 h-8 rounded-full bg-gray-700 object-cover border-2 transition-all ${
+                    isSpeaking
+                      ? isTeacher 
+                        ? 'border-yellow-400 shadow-[0_0_12px_rgba(250,204,21,0.8)]'
+                        : 'border-neon-green shadow-[0_0_12px_rgba(41,255,100,0.8)]'
                       : isTeacher
                         ? 'border-yellow-400'
                         : 'border-gray-600'
                   }`}
                 />
               ) : (
-                <div className={`w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center border-2 transition-all ${
-                  speakingMembers.has(member.userId)
-                    ? 'border-neon-green shadow-[0_0_8px_rgba(41,255,100,0.6)]'
+                <div className={`relative w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center border-2 transition-all ${
+                  isSpeaking
+                    ? isTeacher 
+                      ? 'border-yellow-400 shadow-[0_0_12px_rgba(250,204,21,0.8)]'
+                      : 'border-neon-green shadow-[0_0_12px_rgba(41,255,100,0.8)]'
                     : isTeacher
                       ? 'border-yellow-400'
                       : 'border-gray-600'
@@ -67,9 +98,24 @@ export default function CohortMemberAvatars({ members, mode, memberHealths, spea
               
               {/* Teacher Badge */}
               {isTeacher && (
-                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center border border-gray-900">
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center border border-gray-900 z-10">
                   <GraduationCap size={10} className="text-gray-900" />
                 </div>
+              )}
+              
+              {/* Speaking indicator dot */}
+              {isSpeaking && (
+                <div 
+                  className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full z-10 ${
+                    isTeacher ? 'bg-yellow-400' : 'bg-neon-green'
+                  }`}
+                  style={{
+                    animation: 'pulse 0.8s ease-in-out infinite',
+                    boxShadow: isTeacher 
+                      ? '0 0 8px rgba(250, 204, 21, 1)' 
+                      : '0 0 8px rgba(41, 255, 100, 1)'
+                  }}
+                />
               )}
             </div>
 
@@ -77,14 +123,24 @@ export default function CohortMemberAvatars({ members, mode, memberHealths, spea
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className={`text-sm font-bold truncate ${
-                    isTeacher ? 'text-yellow-400' : 'text-gray-200'
+                  <span className={`text-sm font-bold truncate transition-colors ${
+                    isSpeaking
+                      ? isTeacher ? 'text-yellow-300' : 'text-neon-green'
+                      : isTeacher ? 'text-yellow-400' : 'text-gray-200'
                   }`}>
                     {member.username}
                   </span>
                   {isTeacher && (
                     <span className="px-1.5 py-0.5 text-[8px] font-['Press_Start_2P'] bg-yellow-400/20 text-yellow-400 rounded border border-yellow-400/30 shrink-0">
                       TEACHER
+                    </span>
+                  )}
+                  {/* Speaking text indicator */}
+                  {isSpeaking && (
+                    <span className={`text-[8px] font-['Press_Start_2P'] shrink-0 animate-pulse ${
+                      isTeacher ? 'text-yellow-400' : 'text-neon-green'
+                    }`}>
+                      🎤
                     </span>
                   )}
                 </div>
@@ -101,4 +157,3 @@ export default function CohortMemberAvatars({ members, mode, memberHealths, spea
     </div>
   );
 }
-

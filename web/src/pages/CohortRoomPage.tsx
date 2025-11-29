@@ -37,7 +37,6 @@ export default function CohortRoomPage() {
   const [, setSnapshotReady] = useState(false);
   const [currentProblem, setCurrentProblem] = useState<CohortProblem | null>(null);
   const [showHint, setShowHint] = useState(false);
-  const [speakingMembers, setSpeakingMembers] = useState<Set<string>>(new Set());
   const [teacherRejected, setTeacherRejected] = useState(false); // Teacher already present - reject join
   
   // Teacher verification modal state
@@ -147,42 +146,13 @@ export default function CohortRoomPage() {
         setMembers([]);
       }
 
-      if (currentPresentIds.length === 0) {
-        try {
-          const gameStateRef = ref(rtdb, `cohorts/${cohortId}/gameState`);
-          await set(gameStateRef, {
-            mode: 'whiteboard',
-            drawings: [],
-            startedBy: null,
-            startedAt: null,
-          });
-        } catch (error) {
-          console.error('Failed to reset game state when cohort emptied:', error);
-        }
-      }
+      // Note: Auto-reset on empty presence removed - was causing false resets due to 
+      // network glitches during Agora initialization. Game state is reset explicitly
+      // via handleBattleEnd when games complete.
     });
 
     return () => unsubscribe();
   }, [cohortId, cohort]);
-
-  // Listen to speaking members from Firebase
-  useEffect(() => {
-    if (!cohortId) return;
-
-    const speakingRef = ref(rtdb, `cohorts/${cohortId}/voice/speaking`);
-    
-    const unsubscribe = onValue(speakingRef, (snapshot) => {
-      const speakingData = snapshot.val();
-      if (speakingData) {
-        const speakingUserIds = Object.keys(speakingData);
-        setSpeakingMembers(new Set(speakingUserIds));
-      } else {
-        setSpeakingMembers(new Set());
-      }
-    });
-
-    return () => unsubscribe();
-  }, [cohortId]);
 
   // Listen for teacher verification requests (only if current user is a teacher)
   useEffect(() => {
@@ -324,9 +294,11 @@ export default function CohortRoomPage() {
     
     const unsubscribe = onValue(gameStateRef, (snapshot) => {
       const gameState = snapshot.val();
+      console.log('[CohortRoomPage] gameState listener fired:', gameState);
       if (gameState) {
         // Update mode for all users
         if (gameState.mode === 'battle' || gameState.mode === 'whiteboard') {
+          console.log('[CohortRoomPage] Setting mode to:', gameState.mode);
           setMode(gameState.mode);
         }
         
@@ -340,11 +312,16 @@ export default function CohortRoomPage() {
         if (gameState.mode === 'whiteboard') {
           setDrawings([]);
         }
+        
+        // Sync loading state across all clients
+        setLoadingNewQuestion(gameState.loadingNewQuestion === true);
 
       } else {
         // Default to whiteboard if no game state exists
+        console.log('[CohortRoomPage] gameState is null/undefined, defaulting to whiteboard');
         setMode('whiteboard');
         setDrawings([]);
+        setLoadingNewQuestion(false);
       }
     });
 
@@ -420,60 +397,17 @@ export default function CohortRoomPage() {
   }
 
   const handleVerificationSuccess = async (finalDrawings: WhiteboardDrawing[]) => {
-    if (!cohortId || !user?.id) return;
-    
-    try {
-      // Grant XP for solving the problem
-      const { newLevel, updatedProfile } = await grantCohortSolveXP(user.id);
-      
-      if (newLevel) {
-        showLevelUp(newLevel);
-      }
-      
-      // Check for achievements
-      if (updatedProfile) {
-        const cohortStats = await getUserCohortStats(user.id);
-        const newAchievements = checkNewAchievements(updatedProfile, {
-          cohortSolves: cohortStats.solves,
-          battleWins: cohortStats.battleWins
-        });
-        
-        if (newAchievements.length > 0) {
-          const { unlockedAchievements } = await unlockAchievements(user.id, newAchievements);
-          if (unlockedAchievements.length > 0) {
-            showAchievements(unlockedAchievements);
-          }
-        }
-      }
-
-      // Refresh user profile to update local state
-      await refreshUser();
-
-      // Update game state in RTDB so all users see the battle start
-      const gameStateRef = ref(rtdb, `cohorts/${cohortId}/gameState`);
-      await set(gameStateRef, {
-        mode: 'battle',
-        drawings: finalDrawings,
-        startedBy: user.id,
-        startedAt: Date.now()
-      });
-      
-      // Local state will be updated by the listener above
-    } catch (error) {
-      console.error("Failed to start battle:", error);
-      alert("Failed to start battle. Please try again.");
+    console.log('[CohortRoomPage] handleVerificationSuccess called with', finalDrawings?.length, 'drawings');
+    if (!cohortId || !user?.id) {
+      console.error('[CohortRoomPage] handleVerificationSuccess returning early - cohortId:', cohortId, 'userId:', user?.id);
+      return;
     }
-  };
-
-  const handleBattleEnd = async (victory: boolean = false) => {
-    if (!cohortId || !cohort) return;
-    
-    setLoadingNewQuestion(true);
     
     try {
-      // Grant XP for battle victory
-      if (victory && user?.id) {
-        const { newLevel, updatedProfile } = await grantBattleWinXP(user.id);
+      // Only grant XP to students (teachers don't have XP fields)
+      if (!isTeacher(user)) {
+        // Grant XP for solving the problem
+        const { newLevel, updatedProfile } = await grantCohortSolveXP(user.id);
         
         if (newLevel) {
           showLevelUp(newLevel);
@@ -499,14 +433,72 @@ export default function CohortRoomPage() {
         await refreshUser();
       }
 
-      // 1. Update game state to return to whiteboard
+      // IMPORTANT: Clear stale battle state BEFORE setting mode to battle
+      // This prevents old gameWon/gameOver from immediately ending the new game
+      console.log('[CohortRoomPage] Clearing stale battle state');
+      const battleStateRef = ref(rtdb, `cohorts/${cohortId}/battle`);
+      await remove(battleStateRef);
+      
+      // Update game state in RTDB so all users see the battle start
+      console.log('[CohortRoomPage] Setting gameState to battle mode');
       const gameStateRef = ref(rtdb, `cohorts/${cohortId}/gameState`);
+      await set(gameStateRef, {
+        mode: 'battle',
+        drawings: finalDrawings,
+        startedBy: user.id,
+        startedAt: Date.now()
+      });
+      console.log('[CohortRoomPage] gameState set to battle successfully');
+      
+      // Local state will be updated by the listener above
+    } catch (error) {
+      console.error("[CohortRoomPage] Failed to start battle:", error);
+      alert("Failed to start battle. Please try again.");
+    }
+  };
+
+  const handleBattleEnd = async (victory: boolean = false) => {
+    if (!cohortId || !cohort) return;
+    
+    const gameStateRef = ref(rtdb, `cohorts/${cohortId}/gameState`);
+    
+    try {
+      // 1. Set loading state in Firebase (synced to all clients)
       await set(gameStateRef, {
         mode: 'whiteboard',
         drawings: [],
         startedBy: null,
-        startedAt: null
+        startedAt: null,
+        loadingNewQuestion: true  // This syncs to all users
       });
+      
+      // Grant XP for battle victory (only for students, not teachers)
+      if (victory && user?.id && !isTeacher(user)) {
+        const { newLevel, updatedProfile } = await grantBattleWinXP(user.id);
+        
+        if (newLevel) {
+          showLevelUp(newLevel);
+        }
+        
+        // Check for achievements
+        if (updatedProfile) {
+          const cohortStats = await getUserCohortStats(user.id);
+          const newAchievements = checkNewAchievements(updatedProfile, {
+            cohortSolves: cohortStats.solves,
+            battleWins: cohortStats.battleWins
+          });
+          
+          if (newAchievements.length > 0) {
+            const { unlockedAchievements } = await unlockAchievements(user.id, newAchievements);
+            if (unlockedAchievements.length > 0) {
+              showAchievements(unlockedAchievements);
+            }
+          }
+        }
+
+        // Refresh user profile to update local state
+        await refreshUser();
+      }
       
       // 2. Clear whiteboard drawings in RTDB (clear entire whiteboard node)
       const whiteboardRef = ref(rtdb, `cohorts/${cohortId}/whiteboard`);
@@ -520,7 +512,7 @@ export default function CohortRoomPage() {
       const chatRef = ref(rtdb, `cohorts/${cohortId}/chat/messages`);
       await remove(chatRef);
       
-      // 4. Select new random problem (different from current) - skip for Open Canvas
+      // 5. Select new random problem (different from current) - skip for Open Canvas
       if (cohort.subjectCategory !== 'Open Canvas') {
         const newProblem = getNextProblem(
           cohort.subjectCategory || 'Math',
@@ -528,7 +520,7 @@ export default function CohortRoomPage() {
           currentProblem?.id
         );
         
-        // 5. Update currentProblem in RTDB
+        // Update currentProblem in RTDB
         if (newProblem) {
           const problemRef = ref(rtdb, `cohorts/${cohortId}/currentProblem`);
           await set(problemRef, newProblem);
@@ -542,11 +534,24 @@ export default function CohortRoomPage() {
       // Small delay to ensure all Firebase updates are processed
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Local state will be updated by the listeners
-      setLoadingNewQuestion(false);
+      // 6. Clear loading state in Firebase (synced to all clients)
+      await set(gameStateRef, {
+        mode: 'whiteboard',
+        drawings: [],
+        startedBy: null,
+        startedAt: null,
+        loadingNewQuestion: false  // Clear loading for all users
+      });
     } catch (error) {
       console.error("Failed to end battle:", error);
-      setLoadingNewQuestion(false);
+      // Clear loading state on error
+      await set(gameStateRef, {
+        mode: 'whiteboard',
+        drawings: [],
+        startedBy: null,
+        startedAt: null,
+        loadingNewQuestion: false
+      }).catch(() => {});
     }
   };
 
@@ -715,7 +720,7 @@ export default function CohortRoomPage() {
               members={members} 
               mode={mode} 
               memberHealths={memberHealths}
-              speakingMembers={speakingMembers}
+              speakingMembers={voiceChat.speakingMembers}
             />
             
             {/* Voice Chat Controls */}
@@ -726,10 +731,14 @@ export default function CohortRoomPage() {
                 micVolume={voiceChat.micVolume}
                 outputVolume={voiceChat.outputVolume}
                 speakingLevel={voiceChat.speakingLevel}
+                isInVoiceChannel={voiceChat.isInVoiceChannel}
+                voiceChannelUserCount={voiceChat.voiceChannelUserCount}
                 onToggleMute={voiceChat.toggleMute}
                 onToggleDeafen={voiceChat.toggleDeafen}
                 onMicVolumeChange={voiceChat.setMicVolume}
                 onOutputVolumeChange={voiceChat.setOutputVolume}
+                onJoinVoice={voiceChat.joinVoice}
+                onLeaveVoice={voiceChat.leaveVoice}
               />
             </div>
           </div>

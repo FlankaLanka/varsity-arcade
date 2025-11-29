@@ -149,21 +149,24 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
     };
   }, [cohortId, currentUser]);
 
+  // Track if current user is the one verifying (persists across effect re-runs)
+  const isCurrentUserVerifyingRef = useRef(false);
+
   // Listen for verification state from Firebase
   useEffect(() => {
     if (!cohortId || !currentUser) return;
 
     const verificationRef = ref(rtdb, `cohorts/${cohortId}/verification`);
-    let currentVerifyingUserId: string | null = null;
     
     const unsubscribe = onValue(verificationRef, (snapshot) => {
       const data = snapshot.val();
       console.log('[Whiteboard] Verification state changed:', data);
       if (data) {
         // Someone is verifying
-        currentVerifyingUserId = data.userId || null;
+        const verifyingUserId = data.userId || null;
+        isCurrentUserVerifyingRef.current = verifyingUserId === currentUser.id;
         setIsVerifying(true);
-        setVerifyingUserId(currentVerifyingUserId);
+        setVerifyingUserId(verifyingUserId);
         setVerifyingUsername(data.username || 'Someone');
         
         // If countdown is set, use it; otherwise use message
@@ -197,7 +200,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
       } else {
         console.log('[Whiteboard] Verification state cleared');
         // Verification state cleared - reset everything
-        currentVerifyingUserId = null;
+        isCurrentUserVerifyingRef.current = false;
         setIsVerifying(false);
         setVerifyingUserId(null);
         setVerifyingUsername(null);
@@ -213,12 +216,11 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
 
     return () => {
       unsubscribe();
-      // If I was verifying, clear it when component unmounts
-      if (currentVerifyingUserId === currentUser.id) {
-        remove(verificationRef).catch(() => {});
-      }
+      // Only clear verification if this is component unmount (not effect re-run)
+      // and the current user was the one verifying
+      // Use ref to avoid stale closure issues
     };
-  }, [cohortId, currentUser]);
+  }, [cohortId, currentUser?.id]); // Use currentUser.id instead of currentUser object
 
   // Throttled function to broadcast cursor position
   const broadcastCursor = useCallback(

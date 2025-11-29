@@ -29,7 +29,7 @@ export default function TeacherVerificationModal({
   const recentMessages = chatHistory.slice(-10);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/80 backdrop-blur-sm"
@@ -37,7 +37,7 @@ export default function TeacherVerificationModal({
       />
       
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-4xl max-h-[90vh] mx-4 bg-gray-900 border-2 border-yellow-400 rounded-xl shadow-[0_0_50px_rgba(250,204,21,0.3)] overflow-hidden flex flex-col">
+      <div className="relative z-10 w-full max-w-4xl max-h-[calc(100vh-6rem)] mx-4 bg-gray-900 border-2 border-yellow-400 rounded-xl shadow-[0_0_50px_rgba(250,204,21,0.3)] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="bg-yellow-400/10 border-b border-yellow-400/30 px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
