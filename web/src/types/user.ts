@@ -5,10 +5,35 @@
  * Currently using mock data, structured for easy Firebase integration later.
  */
 
-export interface UserProfile {
+export type AccountType = 'student' | 'teacher';
+
+/**
+ * Teacher-specific profile information
+ */
+export interface TeacherProfile {
+  yearsOfExperience: number;
+  subjects: string[];
+  bio?: string;
+  educationCredentials?: string[];
+}
+
+/**
+ * Base user profile fields shared by both students and teachers
+ */
+export interface BaseUserProfile {
   id: string;
   username: string;
   avatar?: string;
+  accountType: AccountType;
+  friends: Friend[];
+  notifications: Notification[];
+}
+
+/**
+ * Student-specific profile fields
+ */
+export interface StudentProfile extends BaseUserProfile {
+  accountType: 'student';
   totalXP: number;
   level: number;
   currentStreak: number;
@@ -17,10 +42,36 @@ export interface UserProfile {
   gamesCompleted: number;
   achievements: Achievement[];
   dailyQuests: DailyQuest[];
-  friends: Friend[];
   gameStats: Record<GameType, GameStatSummary>;
   activityHistory: ActivityEntry[];
-  notifications: Notification[];
+}
+
+/**
+ * Teacher user profile
+ */
+export interface TeacherUserProfile extends BaseUserProfile {
+  accountType: 'teacher';
+  teacherProfile: TeacherProfile;
+}
+
+/**
+ * Union type for all user profiles
+ * Use type guards (isStudent, isTeacher) to narrow the type
+ */
+export type UserProfile = StudentProfile | TeacherUserProfile;
+
+/**
+ * Type guard to check if user is a student
+ */
+export function isStudent(user: UserProfile): user is StudentProfile {
+  return user.accountType === 'student';
+}
+
+/**
+ * Type guard to check if user is a teacher
+ */
+export function isTeacher(user: UserProfile): user is TeacherUserProfile {
+  return user.accountType === 'teacher';
 }
 
 export interface Achievement {

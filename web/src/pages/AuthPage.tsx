@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { StarfieldBackground } from '../components/StarfieldBackground';
+import type { AccountType } from '../types/user';
 
 export function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -11,6 +12,7 @@ export function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
+  const [accountType, setAccountType] = useState<AccountType>('student');
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -28,7 +30,7 @@ export function AuthPage() {
         if (!email || !password || !username) {
           throw new Error('Please fill in all fields');
         }
-        await signup({ email, username, password });
+        await signup({ email, username, password, accountType });
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred');
@@ -102,6 +104,35 @@ export function AuthPage() {
                     className="w-full bg-gray-800 border-2 border-gray-700 rounded-lg px-4 py-3 text-white focus:border-neon-pink focus:outline-none focus:shadow-[0_0_15px_rgba(255,0,110,0.3)] transition-all font-mono"
                     placeholder="Player1"
                   />
+                </div>
+
+                {/* Account Type Selection */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-['Press_Start_2P'] text-neon-green uppercase">I am a...</label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setAccountType('student')}
+                      className={`flex-1 py-3 px-4 rounded-lg border-2 font-['Press_Start_2P'] text-xs transition-all ${
+                        accountType === 'student'
+                          ? 'border-neon-green bg-neon-green/20 text-neon-green shadow-[0_0_15px_rgba(41,255,100,0.3)]'
+                          : 'border-gray-600 text-gray-400 hover:border-gray-500'
+                      }`}
+                    >
+                      STUDENT
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAccountType('teacher')}
+                      className={`flex-1 py-3 px-4 rounded-lg border-2 font-['Press_Start_2P'] text-xs transition-all ${
+                        accountType === 'teacher'
+                          ? 'border-yellow-400 bg-yellow-400/20 text-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.3)]'
+                          : 'border-gray-600 text-gray-400 hover:border-gray-500'
+                      }`}
+                    >
+                      TEACHER
+                    </button>
+                  </div>
                 </div>
               </>
             )}

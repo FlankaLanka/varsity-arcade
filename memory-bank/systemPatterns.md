@@ -62,6 +62,7 @@ const loop = (currentTime: number) => {
 - **`useRef`** for game state (mutable, doesn't trigger re-renders)
 - **`useState`** for UI state (score display, lives, timer)
 - Game state object contains: player, enemies, projectiles, score, lives, timer
+- **CRITICAL**: For values used in game loops that need to be read synchronously, use refs alongside state (e.g., `gameOverRef` + `gameOver` state). Game loops capture state values in closures at render time, causing stale reads. Refs always provide the current value.
 
 ### Input Handling Pattern
 - Keyboard events: `keydown`/`keyup` listeners on window

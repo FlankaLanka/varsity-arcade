@@ -1,10 +1,11 @@
 import { useNavigate } from 'react-router-dom';
-import { Trophy, Target, Flame, GamepadIcon, TrendingUp, Settings, User, LogOut } from 'lucide-react';
+import { Trophy, Target, Flame, GamepadIcon, TrendingUp, Settings, User, LogOut, GraduationCap } from 'lucide-react';
 import XPProgressBar from './XPProgressBar';
 import AchievementBadge from './AchievementBadge';
 import { useAuth } from '../context/AuthContext';
 import { getQuestProgressPercentage } from '../utils/xpSystem';
 import { getXPProgress } from '../utils/xpSystem';
+import { isStudent, isTeacher } from '../types/user';
 
 interface ProfileDropdownProps {
   isOpen: boolean;
@@ -18,6 +19,107 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
   
   if (!isOpen) return null;
   if (!userProfile) return null;
+
+  // Handle teacher accounts - show simplified teacher dropdown
+  if (isTeacher(userProfile)) {
+    return (
+      <div 
+        className="absolute top-full right-0 mt-2 w-96 z-[100]"
+        onClick={(e) => e.stopPropagation()}
+        style={{ overflow: 'visible' }}
+      >
+        <div className="bg-gray-900/95 backdrop-blur-md border-2 border-yellow-400 rounded-lg shadow-2xl">
+          {/* Header Section */}
+          <div className="relative p-6 bg-gradient-to-br from-yellow-900/50 to-orange-900/50 border-b-2 border-yellow-400/30">
+            <div className="relative flex items-center gap-4">
+              <div className="w-16 h-16 bg-gray-800 border-2 border-yellow-400 rounded-lg overflow-hidden flex items-center justify-center shadow-[0_0_20px_rgba(250,204,21,0.5)]">
+                {userProfile.avatar ? (
+                  <img 
+                    src={userProfile.avatar} 
+                    alt={userProfile.username}
+                    className="w-full h-full object-cover pixelated"
+                  />
+                ) : (
+                  <GraduationCap size={32} className="text-yellow-400" />
+                )}
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="text-lg font-['Press_Start_2P'] text-white">
+                    {userProfile.username}
+                  </h3>
+                  <span className="px-2 py-0.5 bg-yellow-400/20 border border-yellow-400 rounded text-yellow-400 text-[8px] font-['Press_Start_2P']">
+                    TEACHER
+                  </span>
+                </div>
+                <p className="text-sm text-gray-400">
+                  @{userProfile.username}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Teacher Info */}
+          <div className="p-4 border-b-2 border-gray-800">
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs text-gray-400 mb-1">Experience</div>
+                <div className="text-sm font-['Press_Start_2P'] text-yellow-400">
+                  {userProfile.teacherProfile.yearsOfExperience} {userProfile.teacherProfile.yearsOfExperience === 1 ? 'Year' : 'Years'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-400 mb-1">Subjects</div>
+                <div className="flex flex-wrap gap-1">
+                  {userProfile.teacherProfile.subjects.length > 0 ? (
+                    userProfile.teacherProfile.subjects.map((subject, idx) => (
+                      <span 
+                        key={idx} 
+                        className="px-2 py-0.5 bg-yellow-400/10 border border-yellow-400/30 rounded text-xs text-yellow-200"
+                      >
+                        {subject}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs text-gray-500 italic">No subjects added</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Links */}
+          <div className="p-3 bg-gray-800/50">
+            <div className="grid grid-cols-2 gap-2">
+              <button 
+                className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-gray-300 hover:bg-gray-800 hover:border-yellow-400 transition-all flex items-center justify-center gap-2"
+                onClick={() => {
+                  onClose();
+                  navigate('/profile');
+                }}
+              >
+                <User className="w-3 h-3" />
+                Profile
+              </button>
+              <button 
+                className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-red-400 hover:bg-red-900/30 hover:border-red-500 transition-all flex items-center justify-center gap-2"
+                onClick={() => {
+                  onClose();
+                  logout();
+                }}
+              >
+                <LogOut className="w-3 h-3" />
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Student account handling (existing logic)
+  const studentProfile = userProfile;
 
   // Logic to get recent data from profile
   const getTimestamp = (date: Date | any): number => {
@@ -43,12 +145,12 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
     }
   };
 
-  const recentAchievements = userProfile.achievements
+  const recentAchievements = studentProfile.achievements
     .filter(a => a.isUnlocked)
     .sort((a, b) => getTimestamp(b.unlockedAt) - getTimestamp(a.unlockedAt))
     .slice(0, 4);
     
-  const activeDailyQuests = userProfile.dailyQuests.filter(q => !q.completed);
+  const activeDailyQuests = studentProfile.dailyQuests.filter(q => !q.completed);
 
   const handleProfileNavigation = () => {
     onClose();
@@ -65,10 +167,10 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
     logout();
   };
 
-  // Calculate stats
-  const unlockedAchievementsCount = userProfile.achievements.filter(a => a.isUnlocked).length;
-  const totalAchievementsCount = userProfile.achievements.length;
-  const xpProgress = getXPProgress(userProfile.totalXP, userProfile.level);
+  // Calculate stats (only for students)
+  const unlockedAchievementsCount = studentProfile.achievements.filter(a => a.isUnlocked).length;
+  const totalAchievementsCount = studentProfile.achievements.length;
+  const xpProgress = getXPProgress(studentProfile.totalXP, studentProfile.level);
 
   // Default pixel art avatar
   const defaultAvatar = (
@@ -105,10 +207,10 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
           <div className="relative flex items-center gap-4">
             {/* Avatar */}
             <div className="w-16 h-16 bg-gray-800 border-2 border-neon-pink rounded-lg overflow-hidden flex items-center justify-center shadow-[0_0_20px_rgba(255,0,110,0.5)]">
-              {userProfile.avatar ? (
+              {studentProfile.avatar ? (
                 <img 
-                  src={userProfile.avatar} 
-                  alt={userProfile.username}
+                  src={studentProfile.avatar} 
+                  alt={studentProfile.username}
                   className="w-full h-full object-cover pixelated"
                 />
               ) : (
@@ -119,10 +221,10 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
             {/* User Info */}
             <div className="flex-1">
               <h3 className="text-lg font-['Press_Start_2P'] text-white mb-1">
-                {userProfile.username}
+                {studentProfile.username}
               </h3>
               <p className="text-sm text-gray-400">
-                @{userProfile.username}
+                @{studentProfile.username}
               </p>
             </div>
           </div>
@@ -130,8 +232,8 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
           {/* XP Progress */}
           <div className="mt-4">
             <XPProgressBar 
-              currentXP={userProfile.totalXP} 
-              currentLevel={userProfile.level}
+              currentXP={studentProfile.totalXP} 
+              currentLevel={studentProfile.level}
             />
           </div>
         </div>
@@ -146,7 +248,7 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
             <div>
               <div className="text-xs text-gray-400">Streak</div>
               <div className="text-sm font-['Press_Start_2P'] text-orange-500">
-                {userProfile.currentStreak} days
+                {studentProfile.currentStreak} days
               </div>
             </div>
           </div>
@@ -157,7 +259,7 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
             <div>
               <div className="text-xs text-gray-400">Games</div>
               <div className="text-sm font-['Press_Start_2P'] text-neon-cyan">
-                {userProfile.gamesPlayed}
+                {studentProfile.gamesPlayed}
               </div>
             </div>
           </div>
@@ -168,7 +270,7 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
             <div>
               <div className="text-xs text-gray-400">Total Score</div>
               <div className="text-sm font-['Press_Start_2P'] text-neon-yellow">
-                {userProfile.totalScore.toLocaleString()}
+                {studentProfile.totalScore.toLocaleString()}
               </div>
             </div>
           </div>
@@ -179,7 +281,7 @@ export default function ProfileDropdown({ isOpen, onClose }: ProfileDropdownProp
             <div>
               <div className="text-xs text-gray-400">Completed</div>
               <div className="text-sm font-['Press_Start_2P'] text-neon-green">
-                {userProfile.gamesCompleted}
+                {studentProfile.gamesCompleted}
               </div>
             </div>
           </div>

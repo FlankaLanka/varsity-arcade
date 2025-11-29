@@ -5,7 +5,7 @@
 - Update the Memory Bank and this file immediately after learning new patterns or preferences.
 - Prefer absolute paths in tool commands.
 
-## Observations (2025-11-24)
+## Observations (2025-01-29)
 - All multiplayer state (whiteboard and battle) uses Firebase Realtime Database.
 - Battle system uses host-based architecture: first member (by sorted user ID) acts as authoritative host.
 - Keep instructions from the user visible so resets still follow the Memory Bank workflow.
@@ -16,3 +16,17 @@
 - **Session Init**: Host must clear `battle/projectiles` on new battle to prevent stale bullets.
 - **Victory Detection**: Host writes to `battle/gameState`; add fallback `useEffect` watching `enemiesCount === 0` for reliability.
 - **Auto-Reset**: When presence count hits 0, reset `gameState.mode` to `'whiteboard'`.
+
+## Game Loop Stale Closure Pattern (CRITICAL)
+- **Problem**: React state captured in closures at render time becomes stale in `requestAnimationFrame` game loops.
+- **Solution**: For any value read inside a game loop, use a `useRef` alongside the `useState`:
+  - `const [gameOver, setGameOver] = useState(false);`
+  - `const gameOverRef = useRef(false);`
+  - Update BOTH when state changes: `gameOverRef.current = true; setGameOver(true);`
+  - In game loop, read the ref: `if (!gameOverRef.current) { ... }`
+- **Applies to**: `gameOver`, `gameWon`, `gameInitialized`, and any other state used in game loops.
+- **Race Condition Fix**: Set initialization refs to `true` BEFORE starting the game loop, not after Firebase confirms.
+
+## pH Invaders Environment Pattern
+- **Continuous Environments**: Always have an active acidic/basic environment. When one ends, trigger a new one immediately.
+- **No Gaps**: Avoid gaps between environments where scoring becomes undefined.

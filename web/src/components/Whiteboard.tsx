@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Eraser, Undo, Redo, Trash2, PenTool, Check, Circle, Square, Triangle, Move } from 'lucide-react';
 import { ref, onValue, push, set, remove, update, serverTimestamp, onDisconnect, get } from 'firebase/database';
 import { rtdb } from '../lib/firebase';
-import type { WhiteboardDrawing, CohortProblem, AIChatMessage } from '../types/cohort';
+import type { WhiteboardDrawing, CohortProblem, AIChatMessage, CohortMember } from '../types/cohort';
 import { throttle } from '../utils/throttle';
 import { verifySolution } from '../services/aiTutor';
 import { getUserColor } from '../utils/formatters';
@@ -27,6 +27,7 @@ interface WhiteboardProps {
   currentProblem?: CohortProblem | null;
   chatMessages?: AIChatMessage[];
   onVerificationMessage?: (message: string, solved: boolean) => void;
+  members?: CohortMember[]; // For checking if teacher is present
 }
 
 const COLORS = ['#FFFFFF', '#FF0055', '#00FFFF', '#55FF00', '#FFFF00'];
@@ -34,7 +35,7 @@ const BRUSH_SIZES = [2, 4, 8, 12];
 
 type Tool = 'pen' | 'eraser' | 'rect' | 'circle' | 'triangle';
 
-export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onSnapshotRequest, currentProblem, chatMessages = [], onVerificationMessage }: WhiteboardProps) {
+export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onSnapshotRequest, currentProblem, chatMessages = [], onVerificationMessage, members = [] }: WhiteboardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<{ x: number; y: number }[]>([]);
@@ -53,6 +54,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
   const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
   const [verificationSolved, setVerificationSolved] = useState<boolean | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [awaitingTeacher, setAwaitingTeacher] = useState(false);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursor>>({});
   const lastCursorPosition = useRef<{ x: number; y: number } | null>(null);
   const [verifyingUserId, setVerifyingUserId] = useState<string | null>(null);
@@ -156,6 +158,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
     
     const unsubscribe = onValue(verificationRef, (snapshot) => {
       const data = snapshot.val();
+      console.log('[Whiteboard] Verification state changed:', data);
       if (data) {
         // Someone is verifying
         currentVerifyingUserId = data.userId || null;
@@ -165,12 +168,14 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
         
         // If countdown is set, use it; otherwise use message
         if (data.countdown !== undefined && data.countdown !== null) {
+          console.log('[Whiteboard] Countdown detected:', data.countdown);
           setCountdown(data.countdown);
           setVerificationMessage('GET READY!');
           setVerificationSolved(null); // Reset solved status during countdown
           
           // If countdown reaches 0, start battle (all clients will see this)
           if (data.countdown === 0 || data.countdown < 1) {
+            console.log('[Whiteboard] Countdown reached 0, triggering battle start');
             // Small delay to ensure all clients see the final countdown
             setTimeout(() => {
               const currentDrawings = drawingsRef.current;
@@ -186,8 +191,11 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
           setCountdown(null);
           setVerificationMessage(data.message || 'Checking your work...');
           setVerificationSolved(data.solved !== undefined ? data.solved : null);
+          setAwaitingTeacher(data.awaitingTeacher || false);
+          console.log('[Whiteboard] Message/solved update:', { message: data.message, solved: data.solved, awaitingTeacher: data.awaitingTeacher });
         }
       } else {
+        console.log('[Whiteboard] Verification state cleared');
         // Verification state cleared - reset everything
         currentVerifyingUserId = null;
         setIsVerifying(false);
@@ -196,6 +204,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
         setVerificationMessage(null);
         setVerificationSolved(null);
         setCountdown(null);
+        setAwaitingTeacher(false);
       }
     });
 
@@ -759,8 +768,10 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
   };
 
   const startCountdown = useCallback(async () => {
+    console.log('[Whiteboard] startCountdown called, cohortId:', cohortId);
     if (!cohortId) {
       // Fallback for non-cohort mode
+      console.log('[Whiteboard] No cohortId, using local countdown');
       setCountdown(3);
       const countdownInterval = setInterval(() => {
         setCountdown(prev => {
@@ -781,6 +792,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
     // Don't set countdown locally - let Firebase listener handle it
     const verificationRef = ref(rtdb, `cohorts/${cohortId}/verification`);
     
+    console.log('[Whiteboard] Setting Firebase countdown: 3');
     // Update Firebase with countdown state (this will trigger listeners on all clients)
     await update(verificationRef, {
       countdown: 3,
@@ -792,9 +804,11 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
     let currentCount = 3;
     const countdownInterval = setInterval(async () => {
       currentCount -= 1;
+      console.log('[Whiteboard] Countdown tick:', currentCount);
       
       if (currentCount <= 0) {
         clearInterval(countdownInterval);
+        console.log('[Whiteboard] Setting Firebase countdown: 0');
         // Set countdown to 0 so all clients see it, then clear after a brief moment
         await update(verificationRef, {
           countdown: 0,
@@ -802,6 +816,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
         });
         // Clear verification state after all clients have seen countdown 0
         setTimeout(async () => {
+          console.log('[Whiteboard] Removing verification state');
           await remove(verificationRef);
         }, 200);
       } else {
@@ -915,13 +930,17 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
       return;
     }
     
+    // Check if a teacher is present in the cohort
+    const teacher = members.find(m => m.accountType === 'teacher');
+    
     // Try to set verification state (this acts as a lock)
     try {
       await set(verificationRef, {
         userId: currentUser.id,
         username: currentUser.username,
-        message: 'Checking your work...',
-        timestamp: Date.now()
+        message: teacher ? 'Waiting for teacher verification...' : 'Checking your work...',
+        timestamp: Date.now(),
+        awaitingTeacher: !!teacher
       });
     } catch (error) {
       // Failed to acquire lock, someone else might have started
@@ -942,6 +961,62 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
       return;
     }
 
+    // If teacher is present, create teacher verification request
+    if (teacher) {
+      try {
+        // Fetch current chat messages from Firebase
+        const messages = await fetchChatMessages();
+        
+        // Capture whiteboard snapshot for teacher
+        const whiteboardImage = await captureSnapshot();
+        
+        // Sanitize chat history for Firebase (no undefined values allowed)
+        const sanitizedChatHistory = messages.slice(-10).map(msg => ({
+          id: msg.id || `msg-${Date.now()}`,
+          role: msg.role || 'user',
+          content: msg.content || '',
+          timestamp: msg.timestamp instanceof Date ? msg.timestamp.getTime() : Date.now(),
+          userId: msg.userId || null,
+          username: msg.username || (msg.role === 'assistant' ? 'AI Tutor' : 'Unknown')
+        }));
+        
+        // Sanitize problem for Firebase (no undefined values)
+        const sanitizedProblem = currentProblem ? {
+          id: currentProblem.id || `problem-${Date.now()}`,
+          question: currentProblem.question || '',
+          answer: currentProblem.answer || null,
+          category: currentProblem.category || '',
+          subcategory: currentProblem.subcategory || '',
+          hint: currentProblem.hint || null,
+          difficulty: currentProblem.difficulty || 'medium'
+        } : null;
+        
+        // Create teacher verification request
+        const teacherVerificationRef = ref(rtdb, `cohorts/${cohortId}/teacherVerification`);
+        await set(teacherVerificationRef, {
+          userId: currentUser.id,
+          username: currentUser.username,
+          problem: sanitizedProblem,
+          whiteboardImage: whiteboardImage || null,
+          chatHistory: sanitizedChatHistory,
+          timestamp: Date.now()
+        });
+        
+        // The verification state is already set with awaitingTeacher flag
+        // CohortRoomPage will listen for teacher's response and handle the result
+        return;
+      } catch (error) {
+        console.error('Failed to create teacher verification request:', error);
+        await update(verificationRef, {
+          message: 'Error requesting teacher verification. Please try again.',
+          solved: false,
+          awaitingTeacher: false
+        });
+        return;
+      }
+    }
+
+    // No teacher present - use AI verification
     try {
       // Fetch current chat messages from Firebase
       const messages = await fetchChatMessages();
@@ -977,7 +1052,9 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
       if (result.solved) {
         // Start countdown after showing success message
         // Keep verification state active during countdown
+        console.log('[Whiteboard] AI verified as solved, starting countdown in 2 seconds');
         setTimeout(async () => {
+          console.log('[Whiteboard] Calling startCountdown()');
           await startCountdown();
         }, 2000);
       }
@@ -1035,10 +1112,43 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
                 BATTLE STARTING...
               </div>
             </div>
+          ) : awaitingTeacher && verificationSolved === null ? (
+            // Teacher verification waiting screen
+            <div className="flex flex-col items-center max-w-lg px-6 text-center">
+              {/* Teacher badge icon */}
+              <div className="w-24 h-24 rounded-full bg-yellow-400/20 border-4 border-yellow-400 flex items-center justify-center mb-6 animate-pulse">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-400">
+                  <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+                  <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+                </svg>
+              </div>
+              
+              <div className="text-yellow-400 font-['Press_Start_2P'] text-xl mb-4">
+                TEACHER REVIEW
+              </div>
+              
+              {verifyingUsername && (
+                <p className="text-white text-lg mb-4">
+                  <span className="text-neon-cyan font-bold">{verifyingUsername}</span> submitted for verification
+                </p>
+              )}
+              
+              <p className="text-gray-400 text-sm leading-relaxed mb-6">
+                A teacher is reviewing the solution.<br/>
+                Please wait for their decision...
+              </p>
+              
+              {/* Animated dots */}
+              <div className="flex gap-2">
+                <div className="w-3 h-3 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                <div className="w-3 h-3 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                <div className="w-3 h-3 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+              </div>
+            </div>
           ) : verificationMessage ? (
             // Verification message display
             <div className="flex flex-col items-center max-w-lg px-6 text-center">
-              {verifyingUsername && verifyingUserId !== currentUser?.id && (
+              {verifyingUsername && verifyingUserId !== currentUser?.id && !awaitingTeacher && (
                 <div className="text-neon-yellow font-['Press_Start_2P'] text-sm mb-2">
                   {verifyingUsername} is verifying...
                 </div>
@@ -1047,7 +1157,7 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
                 <>
                   <div className="text-6xl mb-4">🎉</div>
                   <div className="text-neon-green font-['Press_Start_2P'] text-xl mb-4">
-                    SOLVED!
+                    {awaitingTeacher ? 'TEACHER APPROVED!' : 'SOLVED!'}
                   </div>
                 </>
               ) : verificationSolved === false ? (
@@ -1064,6 +1174,13 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
                         NEEDS MORE WORK
                       </div>
                     </>
+                  ) : awaitingTeacher ? (
+                    <>
+                      <div className="text-6xl mb-4">🧑‍🏫</div>
+                      <div className="text-red-500 font-['Press_Start_2P'] text-xl mb-4">
+                        TEACHER REJECTED
+                      </div>
+                    </>
                   ) : (
                     <>
                       <div className="text-6xl mb-4">❌</div>
@@ -1073,6 +1190,11 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
                     </>
                   )}
                 </>
+              ) : awaitingTeacher ? (
+                // Awaiting teacher but no solved status yet - show waiting UI
+                <div className="text-yellow-400 font-['Press_Start_2P'] text-lg mb-4 animate-pulse">
+                  AWAITING TEACHER...
+                </div>
               ) : (
                 <div className="text-neon-cyan font-['Press_Start_2P'] text-lg mb-4 animate-pulse">
                   {verifyingUserId === currentUser?.id ? 'CHECKING...' : 'AI IS VERIFYING...'}
@@ -1094,8 +1216,34 @@ export default function Whiteboard({ onVerifySuccess, cohortId, currentUser, onS
                 </button>
               )}
             </div>
+          ) : awaitingTeacher ? (
+            // Default teacher waiting state (no message yet)
+            <div className="flex flex-col items-center max-w-lg px-6 text-center">
+              <div className="w-24 h-24 rounded-full bg-yellow-400/20 border-4 border-yellow-400 flex items-center justify-center mb-6 animate-pulse">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-400">
+                  <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+                  <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+                </svg>
+              </div>
+              <div className="text-yellow-400 font-['Press_Start_2P'] text-xl mb-4">
+                TEACHER REVIEW
+              </div>
+              {verifyingUsername && (
+                <p className="text-white text-lg mb-4">
+                  <span className="text-neon-cyan font-bold">{verifyingUsername}</span> submitted for verification
+                </p>
+              )}
+              <p className="text-gray-400 text-sm leading-relaxed mb-6">
+                A teacher is reviewing the solution.
+              </p>
+              <div className="flex gap-2">
+                <div className="w-3 h-3 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                <div className="w-3 h-3 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                <div className="w-3 h-3 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+              </div>
+            </div>
           ) : (
-            // Default loading state
+            // Default loading state (AI verification)
             <>
               <div className="text-neon-cyan font-['Press_Start_2P'] text-xl mb-4 animate-pulse">
                 {verifyingUserId === currentUser?.id ? 'VERIFYING SOLUTION...' : verifyingUsername ? `${verifyingUsername} IS VERIFYING...` : 'VERIFYING SOLUTION...'}

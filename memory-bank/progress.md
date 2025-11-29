@@ -1,5 +1,21 @@
 # Progress Log
 
+## 2025-01-29 (Session 7)
+- **WhiteboardBattle Single-Player Defeat Screen Fix**:
+  - Fixed "Your team fell" screen not rendering when only 1 player is in the game
+  - Issue: `gameInitialized` React state captured in stale closure inside game loop
+  - Solution: Added `gameInitializedRef` ref alongside the state variable
+  - Fixed race condition: Previously set `gameInitializedRef.current = false` for cohortId cases, relying on Firebase listener to set it back to `true`, but player could die before Firebase synced
+  - Now always set `gameInitializedRef.current = true` right before starting game loop
+  - Defeat/victory detection now works immediately for all player configurations
+
+- **pH Invaders Environment Gap Fix**:
+  - Fixed compounds giving 0 points between environment transitions
+  - Issue: Separate `environmentTimer` caused delays between environments
+  - Solution: Removed separate timer; when environment ends, new one triggers immediately
+  - Added fallback: if no environment active, trigger one immediately
+  - All compound collections now scored based on active environment
+
 ## 2025-01-27 (Session 6)
 - **Leaderboard Page - Real Data**:
   - Replaced synthetic data with real Firestore queries

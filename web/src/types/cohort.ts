@@ -29,6 +29,7 @@ export interface CohortMember {
   username: string;
   avatar?: string;
   joinedAt: Date;
+  accountType?: 'student' | 'teacher'; // Account type for member list display
   position?: {
     x: number;
     y: number;

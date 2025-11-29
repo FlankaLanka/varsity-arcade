@@ -1,14 +1,17 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ReactElement } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, GraduationCap, BookOpen, Award, Briefcase, Edit2, Save, X, Plus, Trash2 } from 'lucide-react';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import XPProgressBar from '../components/XPProgressBar';
 import AchievementBadge from '../components/AchievementBadge';
 import FriendCard from '../components/FriendCard';
 import { FriendDetailModal } from '../components/FriendDetailModal';
 import { useAuth } from '../context/AuthContext';
 import { removeFriend } from '../services/firestore';
-import type { Achievement, Friend, ActivityEntry, GameType } from '../types/user';
+import type { Achievement, Friend, ActivityEntry, GameType, StudentProfile, TeacherUserProfile } from '../types/user';
+import { isStudent, isTeacher } from '../types/user';
 
 // Helper to calculate quest progress since we removed the mock data file
 // Ideally this should be in a utility file
@@ -43,20 +46,52 @@ export function ProfilePage() {
   // Guard clause for type safety, though AuthProvider ensures user is present in this route
   if (!userProfile) return null;
 
-  const filteredAchievements = useMemo(() => {
-    if (activeTab === 'all') return userProfile.achievements;
-    const unlocked = activeTab === 'unlocked';
-    return userProfile.achievements.filter(achievement => achievement.isUnlocked === unlocked);
-  }, [activeTab, userProfile.achievements]);
+  // Check if user is a teacher - render different profile
+  if (isTeacher(userProfile)) {
+    return (
+      <TeacherProfilePage 
+        userProfile={userProfile} 
+        friends={friends}
+        onLogout={logout}
+        onFriendClick={(friend) => {
+          setSelectedFriend(friend);
+          setIsFriendModalOpen(true);
+        }}
+        selectedFriend={selectedFriend}
+        isFriendModalOpen={isFriendModalOpen}
+        onFriendModalClose={() => {
+          setSelectedFriend(null);
+          setIsFriendModalOpen(false);
+        }}
+        onRemoveFriend={async (friendId: string) => {
+          if (!firebaseUser) return;
+          try {
+            await removeFriend(firebaseUser.uid, friendId);
+            setFriends(prev => prev.filter(friend => friend.id !== friendId));
+            if (refreshUser) await refreshUser();
+          } catch (error) {
+            console.error('Failed to remove friend:', error);
+          }
+        }}
+        navigate={navigate}
+        refreshUser={refreshUser}
+      />
+    );
+  }
 
-  const achievementCounts = useMemo(() => {
-    const unlockedCount = userProfile.achievements.filter(a => a.isUnlocked).length;
-    return {
-      all: userProfile.achievements.length,
-      unlocked: unlockedCount,
-      locked: userProfile.achievements.length - unlockedCount,
-    };
-  }, [userProfile.achievements]);
+  // Student profile rendering
+  const studentProfile = userProfile as StudentProfile;
+
+  const filteredAchievements = studentProfile.achievements.filter(achievement => {
+    if (activeTab === 'all') return true;
+    return activeTab === 'unlocked' ? achievement.isUnlocked : !achievement.isUnlocked;
+  });
+
+  const achievementCounts = {
+    all: studentProfile.achievements.length,
+    unlocked: studentProfile.achievements.filter(a => a.isUnlocked).length,
+    locked: studentProfile.achievements.filter(a => !a.isUnlocked).length,
+  };
 
   const defaultAvatar = (
     <svg width="80" height="80" viewBox="0 0 8 8" className="pixelated">
@@ -71,17 +106,12 @@ export function ProfilePage() {
     </svg>
   );
 
-  const activityHistory = useMemo(
-    () =>
-      [...userProfile.activityHistory].sort(
-        (a, b) => {
-            // Handle Firestore Timestamps if they haven't been converted to Date objects yet
-            const dateA = a.date instanceof Date ? a.date : (a.date as any).toDate();
-            const dateB = b.date instanceof Date ? b.date : (b.date as any).toDate();
-            return dateB.getTime() - dateA.getTime();
-        }
-      ),
-    [userProfile.activityHistory],
+  const activityHistory = [...studentProfile.activityHistory].sort(
+    (a, b) => {
+      const dateA = a.date instanceof Date ? a.date : (a.date as any).toDate();
+      const dateB = b.date instanceof Date ? b.date : (b.date as any).toDate();
+      return dateB.getTime() - dateA.getTime();
+    }
   );
 
   const handleFriendClick = (friend: Friend) => {
@@ -117,9 +147,9 @@ export function ProfilePage() {
   return (
     <div className="min-h-screen text-white bg-gradient-to-b from-space-900 via-space-800 to-space-900 overflow-visible">
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-10 overflow-visible">
-        <HeaderSection userProfile={userProfile} defaultAvatar={defaultAvatar} />
+        <HeaderSection userProfile={studentProfile} defaultAvatar={defaultAvatar} />
 
-        <StatsGrid userProfile={userProfile} />
+        <StatsGrid userProfile={studentProfile} />
 
         <AchievementSection
           achievements={filteredAchievements}
@@ -136,7 +166,7 @@ export function ProfilePage() {
 
         <ActivitySection activities={activityHistory} />
 
-        <SettingsSection onLogout={logout} userProfile={userProfile} />
+        <SettingsSection onLogout={logout} userProfile={studentProfile} />
       </div>
 
       <FriendDetailModal
@@ -151,6 +181,401 @@ export function ProfilePage() {
         onBlock={handleBlockFriend}
       />
     </div>
+  );
+}
+
+// Teacher Profile Page Component
+function TeacherProfilePage({
+  userProfile,
+  friends,
+  onLogout,
+  onFriendClick,
+  selectedFriend,
+  isFriendModalOpen,
+  onFriendModalClose,
+  onRemoveFriend,
+  navigate,
+  refreshUser,
+}: {
+  userProfile: TeacherUserProfile;
+  friends: Friend[];
+  onLogout: () => void;
+  onFriendClick: (friend: Friend) => void;
+  selectedFriend: Friend | null;
+  isFriendModalOpen: boolean;
+  onFriendModalClose: () => void;
+  onRemoveFriend: (friendId: string) => Promise<void>;
+  navigate: (path: string) => void;
+  refreshUser?: () => Promise<void>;
+}) {
+  const defaultAvatar = (
+    <svg width="80" height="80" viewBox="0 0 8 8" className="pixelated">
+      <rect x="2" y="1" width="4" height="1" fill="#facc15" />
+      <rect x="1" y="2" width="6" height="3" fill="#facc15" />
+      <rect x="2" y="3" width="1" height="1" fill="#000000" />
+      <rect x="5" y="3" width="1" height="1" fill="#000000" />
+      <rect x="3" y="4" width="2" height="1" fill="#ff006e" />
+      <rect x="1" y="5" width="2" height="2" fill="#facc15" />
+      <rect x="5" y="5" width="2" height="2" fill="#facc15" />
+      <rect x="3" y="6" width="2" height="2" fill="#facc15" />
+    </svg>
+  );
+
+  return (
+    <div className="min-h-screen text-white bg-gradient-to-b from-space-900 via-space-800 to-space-900 overflow-visible">
+      <div className="max-w-6xl mx-auto px-4 py-10 space-y-10 overflow-visible">
+        {/* Teacher Header */}
+        <TeacherHeaderSection userProfile={userProfile} defaultAvatar={defaultAvatar} />
+
+        {/* Teacher Profile Info */}
+        <TeacherInfoSection 
+          teacherProfile={userProfile.teacherProfile} 
+          userId={userProfile.id}
+          onUpdate={refreshUser}
+        />
+
+        {/* Friends Section */}
+        <FriendsSection friends={friends} onFriendClick={onFriendClick} />
+
+        {/* Settings Section */}
+        <SettingsSection onLogout={onLogout} userProfile={userProfile} />
+      </div>
+
+      <FriendDetailModal
+        friend={selectedFriend}
+        open={isFriendModalOpen}
+        onClose={onFriendModalClose}
+        onViewProfile={(friend) => {
+          onFriendModalClose();
+          navigate(`/friend/${friend.id}`);
+        }}
+        onRemove={onRemoveFriend}
+        onBlock={onRemoveFriend}
+      />
+    </div>
+  );
+}
+
+function TeacherHeaderSection({
+  userProfile,
+  defaultAvatar,
+}: {
+  userProfile: TeacherUserProfile;
+  defaultAvatar: ReactElement;
+}) {
+  return (
+    <section className="p-6 border-2 border-yellow-400 rounded-xl bg-gray-900/70 backdrop-blur-lg shadow-2xl">
+      <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
+        <div className="w-24 h-24 bg-gray-800 border-2 border-yellow-400 rounded-xl overflow-hidden flex items-center justify-center shadow-[0_0_30px_rgba(250,204,21,0.6)]">
+          {userProfile.avatar ? (
+            <img src={userProfile.avatar} alt={userProfile.username} className="w-full h-full object-cover pixelated" />
+          ) : (
+            defaultAvatar
+          )}
+        </div>
+
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-2xl font-['Press_Start_2P'] text-white">{userProfile.username}</h1>
+            <span className="px-3 py-1 bg-yellow-400/20 border border-yellow-400 rounded text-yellow-400 text-xs font-['Press_Start_2P']">
+              TEACHER
+            </span>
+          </div>
+          <p className="text-sm text-gray-400">@{userProfile.username}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
+function TeacherInfoSection({ 
+  teacherProfile,
+  userId,
+  onUpdate
+}: { 
+  teacherProfile: TeacherUserProfile['teacherProfile'];
+  userId: string;
+  onUpdate?: () => Promise<void>;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [yearsOfExperience, setYearsOfExperience] = useState(teacherProfile.yearsOfExperience);
+  const [subjects, setSubjects] = useState<string[]>(teacherProfile.subjects);
+  const [bio, setBio] = useState(teacherProfile.bio || '');
+  const [educationCredentials, setEducationCredentials] = useState<string[]>(teacherProfile.educationCredentials || []);
+  const [newSubject, setNewSubject] = useState('');
+  const [newCredential, setNewCredential] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Reset form when teacherProfile changes
+  useEffect(() => {
+    setYearsOfExperience(teacherProfile.yearsOfExperience);
+    setSubjects(teacherProfile.subjects);
+    setBio(teacherProfile.bio || '');
+    setEducationCredentials(teacherProfile.educationCredentials || []);
+  }, [teacherProfile]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        'teacherProfile.yearsOfExperience': yearsOfExperience,
+        'teacherProfile.subjects': subjects,
+        'teacherProfile.bio': bio || '',
+        'teacherProfile.educationCredentials': educationCredentials
+      });
+      
+      setIsEditing(false);
+      if (onUpdate) {
+        await onUpdate();
+      }
+    } catch (error) {
+      console.error('Failed to update teacher profile:', error);
+      alert('Failed to save changes. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setYearsOfExperience(teacherProfile.yearsOfExperience);
+    setSubjects(teacherProfile.subjects);
+    setBio(teacherProfile.bio || '');
+    setEducationCredentials(teacherProfile.educationCredentials || []);
+    setNewSubject('');
+    setNewCredential('');
+    setIsEditing(false);
+  };
+
+  const addSubject = () => {
+    if (newSubject.trim() && !subjects.includes(newSubject.trim())) {
+      setSubjects([...subjects, newSubject.trim()]);
+      setNewSubject('');
+    }
+  };
+
+  const removeSubject = (index: number) => {
+    setSubjects(subjects.filter((_, i) => i !== index));
+  };
+
+  const addCredential = () => {
+    if (newCredential.trim() && !educationCredentials.includes(newCredential.trim())) {
+      setEducationCredentials([...educationCredentials, newCredential.trim()]);
+      setNewCredential('');
+    }
+  };
+
+  const removeCredential = (index: number) => {
+    setEducationCredentials(educationCredentials.filter((_, i) => i !== index));
+  };
+
+  return (
+    <section className="p-6 border-2 border-yellow-400/40 bg-gray-900/60 rounded-xl shadow-lg space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-['Press_Start_2P'] text-yellow-400 flex items-center gap-2">
+          <GraduationCap size={18} />
+          Teacher Profile
+        </h2>
+        {!isEditing ? (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-yellow-400/20 border border-yellow-400 rounded text-yellow-400 text-xs font-['Press_Start_2P'] hover:bg-yellow-400/30 transition-colors"
+          >
+            <Edit2 size={14} />
+            EDIT
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCancel}
+              disabled={isSaving}
+              className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-gray-300 text-xs font-['Press_Start_2P'] hover:bg-gray-600 transition-colors disabled:opacity-50"
+            >
+              <X size={14} />
+              CANCEL
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="flex items-center gap-2 px-3 py-1.5 bg-yellow-400/20 border border-yellow-400 rounded text-yellow-400 text-xs font-['Press_Start_2P'] hover:bg-yellow-400/30 transition-colors disabled:opacity-50"
+            >
+              <Save size={14} />
+              {isSaving ? 'SAVING...' : 'SAVE'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* Years of Experience */}
+        <div className="border border-gray-700 rounded-lg p-4 bg-gray-950/70 space-y-2">
+          <div className="flex items-center gap-2 text-yellow-400">
+            <Briefcase size={16} />
+            <span className="text-xs font-['Press_Start_2P']">Experience</span>
+          </div>
+          {isEditing ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                max="50"
+                value={yearsOfExperience}
+                onChange={(e) => setYearsOfExperience(Math.max(0, parseInt(e.target.value) || 0))}
+                className="w-24 bg-gray-800 border-2 border-yellow-400/50 rounded px-3 py-2 text-white text-lg font-['Press_Start_2P'] focus:border-yellow-400 focus:outline-none"
+              />
+              <span className="text-lg font-['Press_Start_2P'] text-white">
+                {yearsOfExperience === 1 ? 'Year' : 'Years'}
+              </span>
+            </div>
+          ) : (
+            <p className="text-2xl font-['Press_Start_2P'] text-white">
+              {yearsOfExperience} {yearsOfExperience === 1 ? 'Year' : 'Years'}
+            </p>
+          )}
+        </div>
+
+        {/* Subjects */}
+        <div className="border border-gray-700 rounded-lg p-4 bg-gray-950/70 space-y-2">
+          <div className="flex items-center gap-2 text-yellow-400">
+            <BookOpen size={16} />
+            <span className="text-xs font-['Press_Start_2P']">Subjects</span>
+          </div>
+          {isEditing ? (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                {subjects.map((subject, idx) => (
+                  <div 
+                    key={idx} 
+                    className="flex items-center gap-1 px-3 py-1 bg-yellow-400/10 border border-yellow-400/30 rounded text-sm text-yellow-200"
+                  >
+                    <span>{subject}</span>
+                    <button
+                      onClick={() => removeSubject(idx)}
+                      className="ml-1 hover:text-red-400 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newSubject}
+                  onChange={(e) => setNewSubject(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && addSubject()}
+                  placeholder="Add subject..."
+                  className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm focus:border-yellow-400 focus:outline-none"
+                />
+                <button
+                  onClick={addSubject}
+                  className="px-3 py-1 bg-yellow-400/20 border border-yellow-400/30 rounded text-yellow-400 hover:bg-yellow-400/30 transition-colors"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {subjects.length > 0 ? (
+                subjects.map((subject, idx) => (
+                  <span 
+                    key={idx} 
+                    className="px-3 py-1 bg-yellow-400/10 border border-yellow-400/30 rounded text-sm text-yellow-200"
+                  >
+                    {subject}
+                  </span>
+                ))
+              ) : (
+                <span className="text-gray-500 text-sm italic">No subjects added yet</span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Bio */}
+      <div className="border border-gray-700 rounded-lg p-4 bg-gray-950/70 space-y-2">
+        <div className="flex items-center gap-2 text-yellow-400">
+          <span className="text-xs font-['Press_Start_2P']">Bio</span>
+        </div>
+        {isEditing ? (
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            placeholder="Tell students about yourself..."
+            rows={4}
+            className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-yellow-400 focus:outline-none resize-none"
+          />
+        ) : (
+          <p className="text-gray-300 text-sm leading-relaxed">
+            {bio || 'No bio added yet. Tell students about yourself!'}
+          </p>
+        )}
+      </div>
+
+      {/* Education Credentials */}
+      <div className="border border-gray-700 rounded-lg p-4 bg-gray-950/70 space-y-2">
+        <div className="flex items-center gap-2 text-yellow-400">
+          <Award size={16} />
+          <span className="text-xs font-['Press_Start_2P']">Education & Credentials</span>
+        </div>
+        {isEditing ? (
+          <div className="space-y-2">
+            <div className="space-y-2">
+              {educationCredentials.map((credential, idx) => (
+                <div 
+                  key={idx} 
+                  className="flex items-center gap-2 text-gray-300"
+                >
+                  <span className="w-2 h-2 bg-yellow-400 rounded-full" />
+                  <span className="text-sm flex-1">{credential}</span>
+                  <button
+                    onClick={() => removeCredential(idx)}
+                    className="text-red-400 hover:text-red-300 transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newCredential}
+                onChange={(e) => setNewCredential(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && addCredential()}
+                placeholder="Add credential (e.g., M.S. Mathematics, Stanford)"
+                className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm focus:border-yellow-400 focus:outline-none"
+              />
+              <button
+                onClick={addCredential}
+                className="px-3 py-1 bg-yellow-400/20 border border-yellow-400/30 rounded text-yellow-400 hover:bg-yellow-400/30 transition-colors"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {educationCredentials.length > 0 ? (
+              educationCredentials.map((credential, idx) => (
+                <div 
+                  key={idx} 
+                  className="flex items-center gap-2 text-gray-300"
+                >
+                  <span className="w-2 h-2 bg-yellow-400 rounded-full" />
+                  <span className="text-sm">{credential}</span>
+                </div>
+              ))
+            ) : (
+              <span className="text-gray-500 text-sm italic">No credentials added yet</span>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -259,7 +684,8 @@ function AchievementSection({
 
 function DailyQuestSection() {
   const { user: profile } = useAuth();
-  if (!profile) return null;
+  if (!profile || !isStudent(profile)) return null;
+  
   return (
     <section className="p-6 border-2 border-neon-pink/40 bg-gray-900/60 rounded-xl shadow-lg space-y-4">
       <h2 className="text-sm font-['Press_Start_2P'] text-neon-pink flex items-center gap-2">
@@ -296,7 +722,8 @@ function DailyQuestSection() {
 
 function GameStatsSection() {
   const { user: profile } = useAuth();
-  if (!profile) return null;
+  if (!profile || !isStudent(profile)) return null;
+  
   const statValues = Object.values(profile.gameStats);
   const maxHighScore = Math.max(...statValues.map(stat => stat.highScore));
   const maxGamesPlayed = Math.max(...statValues.map(stat => stat.gamesPlayed));

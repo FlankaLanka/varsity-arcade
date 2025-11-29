@@ -1,20 +1,22 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { deleteCohort, getUserProfile, grantCohortSolveXP, grantBattleWinXP, getUserCohortStats } from '../services/firestore';
-import type { Cohort, CohortMember, WhiteboardDrawing, CohortProblem } from '../types/cohort';
+import type { Cohort, CohortMember, WhiteboardDrawing, CohortProblem, AIChatMessage } from '../types/cohort';
 import type { UserProfile } from '../types/user';
+import { isTeacher } from '../types/user';
 import Whiteboard from '../components/Whiteboard';
 import WhiteboardBattle from '../components/WhiteboardBattle';
 import VoiceChatControls from '../components/VoiceChatControls';
 import CohortMemberAvatars from '../components/CohortMemberAvatars';
 import AIChatInterface from '../components/AIChatInterface';
+import TeacherVerificationModal from '../components/TeacherVerificationModal';
 import { useAuth } from '../context/AuthContext';
 import { useAchievements } from '../context/AchievementContext';
 import { rtdb } from '../lib/firebase';
-import { ref, onValue, remove, onDisconnect, set } from 'firebase/database';
+import { ref, onValue, remove, onDisconnect, set, get, update } from 'firebase/database';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Trash2, HelpCircle, Lightbulb } from 'lucide-react';
+import { Trash2, HelpCircle, Lightbulb, AlertCircle } from 'lucide-react';
 import { getRandomProblem, getNextProblem } from '../data/problemBank';
 import { getUserColor } from '../utils/formatters';
 import { useVoiceChat } from '../hooks/useVoiceChat';
@@ -36,6 +38,16 @@ export default function CohortRoomPage() {
   const [currentProblem, setCurrentProblem] = useState<CohortProblem | null>(null);
   const [showHint, setShowHint] = useState(false);
   const [speakingMembers, setSpeakingMembers] = useState<Set<string>>(new Set());
+  const [teacherRejected, setTeacherRejected] = useState(false); // Teacher already present - reject join
+  
+  // Teacher verification modal state
+  const [teacherVerificationRequest, setTeacherVerificationRequest] = useState<{
+    userId: string;
+    username: string;
+    problem: CohortProblem | null;
+    whiteboardImage: string | null;
+    chatHistory: AIChatMessage[];
+  } | null>(null);
 
   // Voice chat hook - only initialize when we have user and cohortId
   const voiceChat = useVoiceChat({
@@ -59,19 +71,46 @@ export default function CohortRoomPage() {
   useEffect(() => {
     if (!cohortId || !user?.id || !cohort) return;
 
-    // Mark user as present in RTDB (all users, including owner)
-    const presenceRef = ref(rtdb, `cohorts/${cohortId}/presence/${user.id}`);
-    set(presenceRef, true).catch(() => {});
+    const joinCohort = async () => {
+      // Check if user is a teacher trying to join
+      if (user && isTeacher(user)) {
+        // Check if there's already a teacher in the cohort
+        const presenceRef = ref(rtdb, `cohorts/${cohortId}/presence`);
+        const presenceSnapshot = await get(presenceRef);
+        const presenceData = presenceSnapshot.val();
+        
+        if (presenceData) {
+          const presentUserIds = Object.keys(presenceData);
+          
+          // Check each present user's profile to see if any is a teacher
+          const profiles = await Promise.all(presentUserIds.map(id => getUserProfile(id)));
+          const existingTeacher = profiles.find(p => p && isTeacher(p));
+          
+          if (existingTeacher && existingTeacher.id !== user.id) {
+            // Teacher already present - reject this teacher
+            setTeacherRejected(true);
+            return;
+          }
+        }
+      }
 
-    // When user disconnects, remove their presence (all users, including owner)
-    onDisconnect(presenceRef).remove();
+      // Mark user as present in RTDB (all users, including owner)
+      const presenceRef = ref(rtdb, `cohorts/${cohortId}/presence/${user.id}`);
+      set(presenceRef, true).catch(() => {});
+
+      // When user disconnects, remove their presence (all users, including owner)
+      onDisconnect(presenceRef).remove();
+    };
+
+    joinCohort();
 
     return () => {
       // Cleanup on component unmount - remove presence for all
       // User is removed from members list automatically when presence is gone
+      const presenceRef = ref(rtdb, `cohorts/${cohortId}/presence/${user.id}`);
       remove(presenceRef).catch(() => {});
     };
-  }, [cohortId, user?.id, cohort]);
+  }, [cohortId, user?.id, cohort, user]);
 
   // Track presence to filter members list
   const [presentUserIds, setPresentUserIds] = useState<Set<string>>(new Set());
@@ -99,6 +138,7 @@ export default function CohortRoomPage() {
             username: profile.username,
             avatar: profile.avatar,
             joinedAt: new Date(),
+            accountType: profile.accountType || 'student', // Include account type for member display
             // position will be updated by other logic if needed
           }));
           
@@ -143,6 +183,116 @@ export default function CohortRoomPage() {
 
     return () => unsubscribe();
   }, [cohortId]);
+
+  // Listen for teacher verification requests (only if current user is a teacher)
+  useEffect(() => {
+    if (!cohortId || !user || !isTeacher(user)) return;
+
+    const teacherVerificationRef = ref(rtdb, `cohorts/${cohortId}/teacherVerification`);
+    
+    const unsubscribe = onValue(teacherVerificationRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setTeacherVerificationRequest({
+          userId: data.userId,
+          username: data.username,
+          problem: data.problem || null,
+          whiteboardImage: data.whiteboardImage || null,
+          chatHistory: data.chatHistory || []
+        });
+      } else {
+        setTeacherVerificationRequest(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [cohortId, user]);
+
+  // Handler for teacher accepting verification
+  const handleTeacherAccept = async () => {
+    if (!cohortId || !teacherVerificationRequest) return;
+    
+    console.log('[Teacher] Accepting verification');
+    
+    try {
+      // Update verification state to accepted
+      // Keep awaitingTeacher true so UI shows "TEACHER APPROVED!" until countdown
+      const verificationRef = ref(rtdb, `cohorts/${cohortId}/verification`);
+      await update(verificationRef, {
+        message: 'Great job! The teacher has verified your solution!',
+        solved: true,
+        awaitingTeacher: true // Keep true so UI shows teacher approved text
+      });
+      console.log('[Teacher] Set solved: true');
+      
+      // Clear teacher verification request
+      const teacherVerificationRef = ref(rtdb, `cohorts/${cohortId}/teacherVerification`);
+      await remove(teacherVerificationRef);
+      
+      setTeacherVerificationRequest(null);
+      
+      // Start countdown after showing success message (same as AI verification flow)
+      console.log('[Teacher] Starting countdown in 2 seconds...');
+      setTimeout(async () => {
+        console.log('[Teacher] Setting countdown: 3');
+        // Set countdown to start the battle
+        await update(verificationRef, {
+          countdown: 3,
+          message: 'GET READY!'
+        });
+        
+        // Countdown interval to update Firebase (all clients see it)
+        let currentCount = 3;
+        const countdownInterval = setInterval(async () => {
+          currentCount -= 1;
+          console.log('[Teacher] Countdown:', currentCount);
+          
+          if (currentCount <= 0) {
+            clearInterval(countdownInterval);
+            await update(verificationRef, {
+              countdown: 0,
+              message: 'GET READY!'
+            });
+            console.log('[Teacher] Countdown finished, removing verification state');
+            // Clear verification state after all clients have seen countdown 0
+            setTimeout(async () => {
+              await remove(verificationRef);
+            }, 200);
+          } else {
+            await update(verificationRef, {
+              countdown: currentCount,
+              message: 'GET READY!'
+            });
+          }
+        }, 1000);
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to accept verification:', error);
+    }
+  };
+
+  // Handler for teacher rejecting verification
+  const handleTeacherReject = async () => {
+    if (!cohortId || !teacherVerificationRequest) return;
+    
+    try {
+      // Update verification state to rejected
+      const verificationRef = ref(rtdb, `cohorts/${cohortId}/verification`);
+      await update(verificationRef, {
+        message: 'Keep working! The teacher wants you to review your solution.',
+        solved: false,
+        awaitingTeacher: false
+      });
+      
+      // Clear teacher verification request
+      const teacherVerificationRef = ref(rtdb, `cohorts/${cohortId}/teacherVerification`);
+      await remove(teacherVerificationRef);
+      
+      setTeacherVerificationRequest(null);
+    } catch (error) {
+      console.error('Failed to reject verification:', error);
+    }
+  };
 
   // Listen to cohort changes in Firestore to update cohort data (but not members directly)
   useEffect(() => {
@@ -243,6 +393,31 @@ export default function CohortRoomPage() {
   }, [cohortId, cohort?.subjectCategory, cohort?.subjectSubcategory]);
 
   if (loading || !cohort) return <div className="text-white p-10">Loading cohort...</div>;
+
+  // Show rejection screen if teacher tries to join and there's already a teacher
+  if (teacherRejected) {
+    return (
+      <div className="h-screen bg-space-900 text-white flex items-center justify-center">
+        <div className="text-center max-w-md p-8 bg-gray-900/80 border-2 border-yellow-400 rounded-xl">
+          <div className="w-16 h-16 mx-auto mb-4 flex items-center justify-center rounded-full bg-yellow-400/20 border-2 border-yellow-400">
+            <AlertCircle size={32} className="text-yellow-400" />
+          </div>
+          <h2 className="text-xl font-['Press_Start_2P'] text-yellow-400 mb-4">
+            TEACHER ALREADY PRESENT
+          </h2>
+          <p className="text-gray-300 mb-6 text-sm leading-relaxed">
+            This cohort already has a teacher. Only one teacher is allowed per cohort at a time.
+          </p>
+          <button
+            onClick={() => navigate('/cohorts')}
+            className="px-6 py-3 bg-yellow-400 text-black font-['Press_Start_2P'] text-xs rounded hover:bg-yellow-300 transition-colors"
+          >
+            RETURN TO COHORTS
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleVerificationSuccess = async (finalDrawings: WhiteboardDrawing[]) => {
     if (!cohortId || !user?.id) return;
@@ -572,6 +747,7 @@ export default function CohortRoomPage() {
                 } : undefined}
                 onSnapshotRequest={handleSnapshotRequest}
                 currentProblem={currentProblem}
+                members={members}
               />
             ) : (
               <WhiteboardBattle 
@@ -600,6 +776,18 @@ export default function CohortRoomPage() {
             disabled={mode === 'battle'}
           />
       </div>
+
+      {/* Teacher Verification Modal */}
+      <TeacherVerificationModal
+        isOpen={!!teacherVerificationRequest}
+        studentUsername={teacherVerificationRequest?.username || ''}
+        problem={teacherVerificationRequest?.problem || null}
+        whiteboardImage={teacherVerificationRequest?.whiteboardImage || null}
+        chatHistory={teacherVerificationRequest?.chatHistory || []}
+        onAccept={handleTeacherAccept}
+        onReject={handleTeacherReject}
+        onClose={() => setTeacherVerificationRequest(null)}
+      />
     </>
   );
 }

@@ -1,6 +1,6 @@
 # Active Context
 
-_Last updated: 2025-01-27 (Session 6)_
+_Last updated: 2025-01-29 (Session 7)_
 
 ## Current Focus
 - **Firebase-Only Architecture**: All multiplayer state (whiteboard drawings, cursors, battle gameplay) uses Firebase Realtime Database. Battle uses a host-based model where one client runs the authoritative simulation.
@@ -17,6 +17,19 @@ _Last updated: 2025-01-27 (Session 6)_
 - **User Profile & Social System** - Complete profile page, XP progression, achievements, friends list with modals.
 
 ## Recently Completed
+- **WhiteboardBattle Single-Player Defeat Screen Fix**:
+  - Fixed "Your team fell" screen not rendering for single players
+  - Root cause: Stale closure issue where `gameInitialized` React state was captured at render time
+  - Added `gameInitializedRef` ref to track initialization state without closure issues
+  - Fixed race condition: `gameInitializedRef.current` now set to `true` right before starting game loop
+  - Ensures defeat/victory detection works immediately regardless of Firebase sync timing
+
+- **pH Invaders Environment Gap Fix**:
+  - Fixed issue where compounds gave 0 points between environment transitions
+  - Root cause: Gap between environments where no acidic/basic environment was active
+  - Now triggers new environment immediately when current one ends
+  - Ensures there's always an active environment for scoring
+
 - **Leaderboard Page - Real Data Integration**:
   - Replaced synthetic leaderboard data with real Firestore queries
   - Added `getLeaderboard()` function in `firestore.ts` to fetch users sorted by game high scores

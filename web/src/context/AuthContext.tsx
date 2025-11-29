@@ -9,7 +9,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import type { UserProfile } from '../types/user';
+import type { UserProfile, StudentProfile, TeacherUserProfile, AccountType } from '../types/user';
 import { getAllAchievementsLocked } from '../data/achievements';
 
 interface AuthContextType {
@@ -27,6 +27,7 @@ export interface SignupData {
   email: string;
   username: string;
   password?: string;
+  accountType?: AccountType;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -51,31 +52,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             let needsUpdate = false;
             const updates: Record<string, any> = {};
             
-            // If user has no achievements or empty achievements, populate with all locked achievements
-            if (!userData.achievements || userData.achievements.length === 0) {
-              const allAchievements = getAllAchievementsLocked();
-              updates.achievements = allAchievements;
-              userData.achievements = allAchievements;
+            // Handle legacy users without accountType - default to student
+            if (!userData.accountType) {
+              (userData as any).accountType = 'student';
+              updates.accountType = 'student';
               needsUpdate = true;
             }
             
-            // Ensure all game stats exist (for users created before pong-arithmetic was added)
-            const defaultGameStats = { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 };
-            const gameTypes = ['asteroids', 'pacman-math', 'ph-invaders', 'pong-arithmetic'] as const;
-            
-            if (!userData.gameStats) {
-              userData.gameStats = {} as UserProfile['gameStats'];
-            }
-            
-            for (const gameType of gameTypes) {
-              if (!userData.gameStats[gameType]) {
-                userData.gameStats[gameType] = { ...defaultGameStats };
-                updates[`gameStats.${gameType}`] = defaultGameStats;
+            // Only apply student-specific updates for student accounts
+            if (userData.accountType === 'student') {
+              const studentData = userData as StudentProfile;
+              
+              // If user has no achievements or empty achievements, populate with all locked achievements
+              if (!studentData.achievements || studentData.achievements.length === 0) {
+                const allAchievements = getAllAchievementsLocked();
+                updates.achievements = allAchievements;
+                studentData.achievements = allAchievements;
                 needsUpdate = true;
+              }
+              
+              // Ensure all game stats exist (for users created before pong-arithmetic was added)
+              const defaultGameStats = { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 };
+              const gameTypes = ['asteroids', 'pacman-math', 'ph-invaders', 'pong-arithmetic'] as const;
+              
+              if (!studentData.gameStats) {
+                studentData.gameStats = {} as StudentProfile['gameStats'];
+              }
+              
+              for (const gameType of gameTypes) {
+                if (!studentData.gameStats[gameType]) {
+                  studentData.gameStats[gameType] = { ...defaultGameStats };
+                  updates[`gameStats.${gameType}`] = defaultGameStats;
+                  needsUpdate = true;
+                }
               }
             }
             
-            // Ensure notifications array exists
+            // Ensure notifications array exists (for all account types)
             if (!userData.notifications) {
               userData.notifications = [];
               updates.notifications = [];
@@ -133,30 +146,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       displayName: data.username
     });
 
-    // 3. Create Firestore User Document with all achievements initialized as locked
-    const allAchievements = getAllAchievementsLocked();
+    // 3. Create Firestore User Document based on account type
+    const accountType = data.accountType || 'student';
     
-    const newUserProfile: UserProfile = {
-      id: firebaseUser.uid,
-      username: data.username,
-      totalXP: 0,
-      level: 1,
-      currentStreak: 0,
-      gamesPlayed: 0,
-      totalScore: 0,
-      gamesCompleted: 0,
-      achievements: allAchievements,
-      dailyQuests: [], // Could initialize with some default quests if defined elsewhere
-      friends: [],
-      gameStats: {
-        'asteroids': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
-        'pacman-math': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
-        'ph-invaders': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
-        'pong-arithmetic': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
-      },
-      activityHistory: [],
-      notifications: []
-    };
+    let newUserProfile: UserProfile;
+    
+    if (accountType === 'teacher') {
+      // Create teacher profile
+      const teacherProfile: TeacherUserProfile = {
+        id: firebaseUser.uid,
+        username: data.username,
+        accountType: 'teacher',
+        friends: [],
+        notifications: [],
+        teacherProfile: {
+          yearsOfExperience: 0,
+          subjects: [],
+          bio: '',
+          educationCredentials: []
+        }
+      };
+      newUserProfile = teacherProfile;
+    } else {
+      // Create student profile with all achievements initialized as locked
+      const allAchievements = getAllAchievementsLocked();
+      
+      const studentProfile: StudentProfile = {
+        id: firebaseUser.uid,
+        username: data.username,
+        accountType: 'student',
+        totalXP: 0,
+        level: 1,
+        currentStreak: 0,
+        gamesPlayed: 0,
+        totalScore: 0,
+        gamesCompleted: 0,
+        achievements: allAchievements,
+        dailyQuests: [],
+        friends: [],
+        gameStats: {
+          'asteroids': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
+          'pacman-math': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
+          'ph-invaders': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
+          'pong-arithmetic': { highScore: 0, gamesPlayed: 0, bestStreak: 0, totalXP: 0 },
+        },
+        activityHistory: [],
+        notifications: []
+      };
+      newUserProfile = studentProfile;
+    }
 
     await setDoc(doc(db, 'users', firebaseUser.uid), newUserProfile);
     setUser(newUserProfile);
